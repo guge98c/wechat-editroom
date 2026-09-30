@@ -434,7 +434,7 @@ URL 规范化为裸仓库地址（https://github.com/owner/repo）；经手工�
 → 编辑室
 
 ### POST /api/candidates/:id/lock
-锁定简报（写入 article-brief.md）。只校验当前已保存的编辑决策是否完整；编辑室预检缓存可选，缺失或过期时不再阻断首次成稿。成稿链会在后续阶段按当前简报重新建立事实基座并执行事实门禁。
+锁定简报（写入 article-brief.md）。只校验当前已保存的编辑决策是否完整。确认成稿后，成稿链会重新生成事实基座并执行事实与证据门禁；编辑室预检只检查底稿、来源可用性和文章路线，不生成或复用事实基座。
 → 编辑室（确认简报）
 
 ### POST /api/candidates/:id/promote-article

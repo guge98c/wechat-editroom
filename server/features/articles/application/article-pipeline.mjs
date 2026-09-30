@@ -545,11 +545,9 @@ export async function runArticlePipeline({gateway,store,batchId,candidateId,prov
   // 不要在这里传固定 maxOutputTokens：gateway 的 article-fact-base
   // profile 需要在 finish=length 时从 5000 自动扩容到供应商上限，否则
   // parseModelJson 只能看到半截 JSON，后续大纲和成稿都不会开始。
-  const preflightSnapshot=readJsonIfPresent(path.join(workdir,'editorial-preflight.json'),null);
-  const preflightFactBase=readJsonIfPresent(path.join(workdir,'02-fact-base.json'),null);
-  const rawFactBase=preflightSnapshot?.ready&&preflightFactBase
-    ? preflightFactBase
-    : parseJsonResult(await gateway.complete({provider,purpose:'article-fact-base',batchId,candidateId,jsonMode:true,messages:[
+  // Always regenerate from the locked brief and current source inputs. An older
+  // editor-room preflight artifact is only a readiness snapshot, never a fact-base cache.
+  const rawFactBase=parseJsonResult(await gateway.complete({provider,purpose:'article-fact-base',batchId,candidateId,jsonMode:true,messages:[
       {role:'system',protected:true,content:buildArticleStageSystem(orchestratorSkill,'fact-base')},
       {role:'user',protected:true,content:JSON.stringify({topic:brief.topic,researchBasis:brief.researchBasis,adoptedResearchPoints:brief.adoptedResearchPoints,rejectedAngles:brief.rejectedAngles,confirmedFacts:brief.confirmedFacts,authorOpinions:brief.authorOpinions,forbiddenClaims:brief.forbiddenClaims,materialBrief:brief.materialBrief,sourceUrl:brief.sourceUrl,sourceText:brief.sourceText||''})},
     ]}),store);
