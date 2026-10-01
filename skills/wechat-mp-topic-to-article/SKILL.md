@@ -106,6 +106,10 @@ brief → fact-base → planning → drafting → draft-quality-gate → title-g
 
 事实基座每条 claim 还应尽量保留 `source_group_id`、`source_level`、`evidence_kind`、`attribution_required`、`visible_citation`。同一来源拆出的多条主张共享稳定的 `source_group_id`；`personal_social` 来源默认使用 `source_observation`、`attribution_required: true` 和 `visible_citation: cluster`。这里的 `verified` 只表示来源正文直接支持该主张，不表示公司或多方已经独立确认。
 
+来源追溯首先保存在事实基座和主张登记中，不等于正文要逐句标“来源”。正文禁止使用“来源：”“来源：同上”这类台账式标签。同一来源支撑的连续事实，在该段或该事实簇首次出现时自然交代一次来源（优先把来源名链接到原文）；后续句子不重复标记，除非换了来源、读者可能无法判断归属，或新增的是需要明确归因的争议/高影响主张。报告稿也按主张和来源变化归因，不按句子计数。链接、自然归因、脚注或文末来源说明任选适合本文的一种方式，不叠加堆放。
+
+风险限定只写会影响读者判断的那一条。消息由谁提出、目前确认到什么程度、还有哪个关键事实未知，合并成一句自然表达；不要再补“尚未经第三方核实”“来源未官方确认”“仍待厘清”“回应没有给出……”等同义说明。若一句明确归因（如“豆包方面回应称……”）已能说明这是单方说法，不要自动追加“这是该方说法”；仅当独立核实状态本身与判断有关时才说明。内部证据边界和未核实状态留在主张登记，不要整段搬进正文。
+
 事实基座完成后生成发布主张登记。没有 URL 的外部主张不能标为 `verified`；来源 URL 存在也不等于来源直接支持主张。高影响主张没有直接证据时，必须进入 `restricted_claims`，不得在标题中使用。
 
 写入 `02-outline.md`，包括：账号定位来源、内容支柱、核心判断、目标读者、读者任务、分发池、读者利益、包装模式、内容角色、`article_type`、`writing_stance`、来源归因策略、事实基座、点击机制、开头钩子、冲突推进、完读节点、章节推进、信息增量锚点、读者收益类型与放置方式、结尾回收和增长承接。优先采用 `content_package` 的开头钩子与结构骨架；因事实核验需要调整时记录差异。前 50–80 字进入具体人物、事件、数字或反差，前 200 字兑现核心冲突或明确阅读问题。
@@ -144,7 +148,7 @@ brief → fact-base → planning → drafting → draft-quality-gate → title-g
 
 写入 `04-draft.md`。要求：
 
-- 只使用事实基座允许的事实；`restricted_claims` 只能按登记的归因和限定方式出现，禁止把研判假设写成事实。来源可见策略按 `writing_stance` 执行：`report` 默认逐条归因，`analysis` / `opinion` 对同一 `source_group_id` 在事实簇首次出现时集中归因；机器事实登记仍必须完整保留
+- 只使用事实基座允许的事实；`restricted_claims` 只能按登记的归因和限定方式出现，禁止把研判假设写成事实。正文来源可见策略按来源簇执行：`report` 对每个事实段或来源簇的首次出现清楚归因，`analysis` / `opinion` 对同一 `source_group_id` 在相关段落首次出现时集中归因；新来源、争议主张和高影响主张仍要明确归因。禁止逐句重复来源、使用“来源：同上”标签，或把内部证据状态写成一串免责声明；机器事实登记仍必须完整保留
 - 必须围绕 `material_brief` 的冲突和读者收益组织正文，不能只复述事件；读者收益按 `reader_value_type` 和 `reader_value_placement` 实现，不得为了填模板强行新增独立章节
 - 至少嵌入一个作者素材锚点
 - 遵守 `voice_guardrails`，并让正文兑现 `reader_job`，不能只在元数据里记录
