@@ -186,6 +186,26 @@
         "cap_collect_twitter"
       ],
       "riskLevel": "network-read"
+    },
+    {
+      "id": "wechat-account-collector",
+      "name": "微信公众号账号",
+      "version": "1.0.0",
+      "kind": "collector",
+      "capabilities": [
+        "cap_collect_wechat"
+      ],
+      "riskLevel": "network-read"
+    },
+    {
+      "id": "x-search-collector",
+      "name": "X 搜索 / 趋势",
+      "version": "2.0.0",
+      "kind": "collector",
+      "capabilities": [
+        "cap_collect_x"
+      ],
+      "riskLevel": "network-read"
     }
   ],
   "skills": [

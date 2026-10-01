@@ -14,7 +14,9 @@ function workspace(t,prefix){const root=fs.mkdtempSync(path.join(os.tmpdir(),pre
 test('全部内置插件可作为不携带其他源码的第三方包独立校验、加载和卸载',async t=>{
   const packagesRoot=workspace(t,'builtin-plugin-packages-'),runtimeRoot=workspace(t,'builtin-plugin-runtime-');
   const packages=stageAllBuiltinPluginPackages(path.join(projectRoot,'plugins'),packagesRoot);
-  assert.equal(packages.length,18);
+  assert.equal(packages.length,20);
+  assert.ok(packages.some(({manifest})=>manifest.id==='wechat-account-collector'));
+  assert.ok(packages.some(({manifest})=>manifest.id==='x-search-collector'));
   for(const item of packages){
     const files=fs.readdirSync(item.directory);
     assert.equal(files.includes('manifest.json'),true);

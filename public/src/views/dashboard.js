@@ -18,11 +18,9 @@ export function localDate(date = new Date()) {
 
 export function renderBatchSwitcher() {
   const switcher = $("#batch-switcher");
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-  // batch_date 是本地日期，比较必须用本地日期串，不能用 toISOString()（UTC 截断会让负时区用户少看一天）
-  const recent = state.batches.filter((b) => b.batch_date >= localDate(weekAgo) && (b.lifecycle_status||"active")==="active");
-  switcher.innerHTML = recent.length
-    ? recent.map((batch) => `<option value="${escapeHtml(batch.id)}" ${batch.id === state.activeBatchId ? "selected" : ""}>${escapeHtml(batch.batch_date)} · ${escapeHtml(batch.title)}</option>`).join("")
+  const activeBatches = state.batches.filter((batch) => (batch.lifecycle_status || "active") === "active");
+  switcher.innerHTML = activeBatches.length
+    ? activeBatches.map((batch) => `<option value="${escapeHtml(batch.id)}" ${batch.id === state.activeBatchId ? "selected" : ""}>${escapeHtml(batch.batch_date)} · ${escapeHtml(batch.title)}</option>`).join("")
     : state.batches.length ? '<option value="">选择批次</option>' : '<option value="">暂无批次</option>';
 }
 
@@ -122,7 +120,7 @@ function renderRecentActivity(batches = [], overview = {}) {
 }
 
 export default async function loadOverview() {
-  const [overview, batches] = await Promise.all([request("/api/overview"), request("/api/batches?limit=20")]);
+  const [overview, batches] = await Promise.all([request("/api/overview"), request("/api/batches?limit=500")]);
   state.overview = overview;
   state.batches = batches;
   if (!state.activeBatchId && batches.length) state.activeBatchId = batches[0].id;
