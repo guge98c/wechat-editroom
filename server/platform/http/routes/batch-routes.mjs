@@ -84,7 +84,7 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
     const input = await body(request);
     // 批次不再拥有第二套来源选择状态；来源台账中的 enabled 才是唯一准入条件。
     // 保留固定入口集合只是为了兼容旧客户端的响应字段，不采信 input.sources 的子集。
-    const requestedSources = ['reddit', 'rsshub', 'x', 'wechat', 'github'];
+    const requestedSources = ['reddit', 'paper', 'rsshub', 'x', 'wechat', 'github'];
     const rsshub = await inspectRsshubEnvironment(config?.rsshub || {});
     const selection = selectBatchSourceGroups(requestedSources, store.listCollectionSources(), {
       rsshubReady: rsshub.ready,

@@ -9,6 +9,7 @@ export {
   dimensionSelections,
   ensureBatchEventCards,
   focusedCategories,
+  freshnessWindowHours,
   generateEventCards,
   isFreshForBatch,
   isSocialCardCandidate,

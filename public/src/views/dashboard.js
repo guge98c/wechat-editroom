@@ -37,12 +37,12 @@ function renderLatest(batch) {
 }
 
 function renderSources(sources) {
-  const defaults = ["reddit", "rsshub", "github"];
+  const defaults = ["reddit", "paper", "rsshub", "github"];
   const byName = new Map(sources.map((item) => [item.source, item]));
   $("#source-health").innerHTML = defaults.map((source) => {
     const item = byName.get(source) ?? { status: "unknown", item_count: 0 };
     const note = item.status === "unknown" ? "尚未执行" : item.error || `${formatDate(item.ended_at, { hour: "2-digit", minute: "2-digit" })} 更新`;
-    const labels = { reddit: "Reddit", rsshub: "RSSHub", github: "GitHub" };
+    const labels = { reddit: "Reddit", paper: "论文雷达", rsshub: "RSSHub", github: "GitHub" };
     return `<div class="source-row ${item.status}"><i></i><div><strong>${labels[source]}</strong><small>${escapeHtml(note)}</small></div><b>${item.item_count ?? 0}</b></div>`;
   }).join("");
 }

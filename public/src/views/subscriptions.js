@@ -4,9 +4,9 @@ import { escapeHtml, toast, confirmAction } from "../core/ui.js";
 import { state } from "../core/state.js";
 
 const LEGACY_KINDS = new Set(["direct", "twitter", "rsshub", "github"]);
-const CREATABLE_PLUGINS = new Set(["reddit-collector", "feed-collector", "rsshub-collector", "x-search-collector", "wechat-account-collector", "declarative-web-page", "browser-web-page"]);
-const LABELS = { direct: "DIRECT", twitter: "X / TWITTER", x: "X / TWEXAPI", wechat: "WECHAT", rsshub: "RSSHUB", github: "GITHUB", reddit: "REDDIT" };
-const TYPE_LABELS = { direct: "直连 RSS / Atom", twitter: "X（RSSHub）", x: "X 搜索 / 趋势", wechat: "微信公众号", rsshub: "RSSHub", reddit: "Reddit", github: "GitHub", "web-page": "静态网页", "browser-page": "动态网页" };
+const CREATABLE_PLUGINS = new Set(["reddit-collector", "feed-collector", "rsshub-collector", "x-search-collector", "tech-twitter-collector", "wechat-account-collector", "paper-radar-collector", "declarative-web-page", "browser-web-page"]);
+const LABELS = { direct: "DIRECT", twitter: "X / TWITTER", x: "X / SOCIAL", wechat: "WECHAT", rsshub: "RSSHUB", github: "GITHUB", reddit: "REDDIT", paper: "PAPERS" };
+const TYPE_LABELS = { direct: "直连 RSS / Atom", twitter: "X（RSSHub）", x: "X 精选 / 搜索 / 趋势", wechat: "微信公众号", rsshub: "RSSHub", reddit: "Reddit", github: "GitHub", paper: "学术论文" , "web-page": "静态网页", "browser-page": "动态网页" };
 const WEB_PLUGINS = new Set(["declarative-web-page", "browser-web-page"]);
 const BASIC_WEB_FIELDS = new Set(["url", "itemSelector", "titleSelector", "linkSelector"]);
 const FIELD_HELP = {
@@ -33,11 +33,13 @@ const WEB_GUIDANCE = {
 function pluginById(id) { return (state.collectorPlugins || []).find((item) => item.id === id); }
 function unifiedValue(item) { return item.config?.subreddit ? `r/${item.config.subreddit}` : item.config?.identifier || item.config?.query || item.config?.url || item.config?.route || item.source_key; }
 function unifiedItems() {
-  return (state.collectionSources || []).map((item) => ({
+  return (state.collectionSources || []).map((item) => {
+    const plugin = pluginById(item.plugin_id);
+    return {
     id: item.id, kind: item.source_type, value: unifiedValue(item), label: item.label,
     enabled: Boolean(item.enabled), managed: item.origin === "managed", pluginId: item.plugin_id,
-    unified: true, pluginAvailable: pluginById(item.plugin_id)?.available !== false, health: item.health || (item.last_test_status ? { status: item.last_test_status, error: item.last_test_error } : null),
-  }));
+    unified: true, pluginAvailable: plugin?.available !== false, pluginNeedsConfiguration: plugin?.executionStatus === "needs_configuration", health: item.health || (item.last_test_status ? { status: item.last_test_status, error: item.last_test_error } : null),
+  };});
 }
 function allItems() {
   const unified = unifiedItems();
@@ -147,7 +149,7 @@ function renderSubscriptions() {
   $("#source-filter-count").textContent = filtered ? `显示 ${items.length} / ${all.length}` : `共 ${all.length} 个来源`;
   $("#subscription-list").innerHTML = items.length ? items.map((item, index) => {
     const status = itemStatus(item), hc = status === "success" ? "ok" : status === "failed" ? "bad" : "idle";
-    const healthText = item.pluginAvailable === false ? "插件不可用 · 来源配置已保留" : status === "disabled" ? "已暂停" : status === "success" ? `最近成功 · ${item.health?.item_count || 0} 条` : status === "failed" ? `最近失败 · ${item.health?.error || "未返回详情"}` : "尚无采集记录";
+    const healthText = item.pluginAvailable === false ? item.pluginNeedsConfiguration ? "请先在系统配置中完成该采集器设置" : "插件不可用 · 来源配置已保留" : status === "disabled" ? "已暂停" : status === "success" ? `最近成功 · ${item.health?.item_count || 0} 条` : status === "failed" ? `最近失败 · ${item.health?.error || "未返回详情"}` : "尚无采集记录";
     const identity = item.unified ? `data-source-id="${item.id}"` : `data-kind="${escapeHtml(item.kind)}" data-value="${escapeHtml(item.value)}"`;
     return `<article class="subscription-row health-${hc} ${item.enabled ? "" : "disabled"}" style="--row:${index}"><span class="subscription-kind ${escapeHtml(item.kind)}">${escapeHtml(LABELS[item.kind] || item.kind)}</span><div class="subscription-identity"><b>${escapeHtml(item.label)}</b><code>${escapeHtml(item.value)}</code><small>${escapeHtml(pluginById(item.pluginId)?.name || (item.unified ? item.pluginId : "内置兼容来源"))}</small><small class="source-health ${hc}">${escapeHtml(healthText)}</small></div>${item.managed ? '<span class="story-meta">系统采集入口</span>' : `<label class="source-switch"><input type="checkbox" data-source-toggle ${identity} ${item.enabled ? "checked" : ""}><i></i><span>${item.enabled ? "启用" : "暂停"}</span></label>`}<div class="subscription-actions">${item.managed ? '<span class="story-meta">随系统任务执行</span>' : `<button class="text-button" data-source-test ${identity}>测试</button><button class="source-remove" data-source-remove ${identity} aria-label="删除订阅源：${escapeHtml(item.label)}">×</button>`}</div></article>`;
   }).join("") : `<div class="empty-state source-empty"><b>${all.length ? "没有匹配的订阅源" : "还没有订阅源"}</b><span>${all.length ? "换个关键词，或清除当前筛选条件。" : "从左侧选择一种来源并完成首次添加。"}</span>${filtered ? '<button type="button" class="text-button" data-clear-source-filters>清除筛选</button>' : ""}</div>`;

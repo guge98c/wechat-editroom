@@ -10,6 +10,7 @@ test('批次采集能力只把已启用的来源类型标记为可执行', () =>
   ]);
   assert.deepEqual(groups.map((item) => [item.id, item.ready, item.enabledSourceCount]), [
     ['reddit', false, 0],
+    ['paper', false, 0],
     ['rsshub', true, 1],
     ['x', false, 0],
     ['wechat', false, 0],

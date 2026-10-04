@@ -1,5 +1,5 @@
 const HOUR = 60 * 60 * 1000;
-export const EVENT_HEAT_RANKING_VERSION = 3;
+export const EVENT_HEAT_RANKING_VERSION = 5;
 
 function timeValue(value) {
   const parsed = Date.parse(value || '');
@@ -12,6 +12,15 @@ function clamp(value, min, max) {
 
 function parseRaw(hotspot) {
   try { return JSON.parse(hotspot?.raw_json || '{}'); } catch { return {}; }
+}
+
+function observedAt(hotspot) {
+  const raw = parseRaw(hotspot);
+  const paperSource = hotspot?.source_group === 'paper' || hotspot?.source_type === 'paper' || raw.sourceType === 'paper';
+  if (!paperSource) return hotspot?.published_at || hotspot?.created_at;
+  const huggingFacePaper = (raw.discoverySources || []).includes?.('huggingface_papers')
+    || /hugging\s*face/i.test(String(raw.platform || ''));
+  return raw.discoveredAt || (huggingFacePaper ? hotspot?.created_at : null) || hotspot?.published_at || hotspot?.created_at;
 }
 
 function tagValue(hotspot, key) {
@@ -73,6 +82,91 @@ function preScoresOf(event = {}, currentHotspots = []) {
   if (direct && typeof direct === 'object' && Object.keys(direct).length) return direct;
   return currentHotspots.map((hotspot) => parseRaw(hotspot).aiTags?.preScores)
     .find((scores) => scores && typeof scores === 'object') || {};
+}
+
+const PLATFORM_METRIC_REFERENCES = Object.freeze({
+  views: 100000, read: 50000, look: 50000,
+  likes: 5000, replies: 500, reposts: 1000, bookmarks: 300,
+  upvotes: 100, score: 1000, stars: 10000,
+});
+
+function metricCount(value) {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== 'string') return null;
+  const match = value.replace(/,/g, '').match(/^\s*(\d+(?:\.\d+)?)\s*([km])?\s*(?:points?|score)?\s*$/i);
+  if (!match) return null;
+  const multiplier = match[2]?.toLowerCase() === 'k' ? 1000 : match[2]?.toLowerCase() === 'm' ? 1000000 : 1;
+  return Number(match[1]) * multiplier;
+}
+
+function normalizedMetric(value, reference) {
+  const count = metricCount(value);
+  if (count == null) return null;
+  return clamp(Math.log1p(count) / Math.log1p(reference), 0, 1);
+}
+
+function platformOf(hotspot, raw, metrics) {
+  const provider = String(raw.raw?.provider || raw.provider || raw.platform || raw.raw?.platform || metrics.platform || '').toLowerCase();
+  const source = String(hotspot.source_group || hotspot.source_type || hotspot.source || '').toLowerCase();
+  if (/techtwitter/.test(`${provider} ${source}`)) return 'techtwitter';
+  if (/twex|(^|[^a-z])x([^a-z]|$)|twitter/.test(`${provider} ${source}`)) return 'x';
+  if (/dajiala|wechat|公众号/.test(`${provider} ${source}`) || metrics.read != null) return 'wechat';
+  if (/reddit/.test(`${provider} ${source}`) || raw.scoreText != null || raw.raw?.scoreText != null) return 'reddit';
+  if (/hugging.?face/.test(`${provider} ${source}`) || metrics.upvotes != null) return 'huggingface';
+  if (/github/.test(`${provider} ${source}`) || raw.stars != null || raw.raw?.stars != null) return 'github';
+  return provider || source || 'other';
+}
+
+function scorePlatformItem(hotspot, asOf) {
+  const raw = parseRaw(hotspot);
+  const metrics = { ...(raw.raw?.metrics || {}), ...(raw.metrics || {}) };
+  const reachValues = [
+    ['views', metrics.views, PLATFORM_METRIC_REFERENCES.views],
+    ['read', metrics.read, PLATFORM_METRIC_REFERENCES.read],
+    ['look', metrics.look, PLATFORM_METRIC_REFERENCES.look],
+  ].map(([key, value, reference]) => ({ key, score: normalizedMetric(value, reference) })).filter((item) => item.score != null);
+  const interactionSpecs = [
+    ['likes', 1, PLATFORM_METRIC_REFERENCES.likes],
+    ['replies', 1.25, PLATFORM_METRIC_REFERENCES.replies],
+    ['reposts', 1.25, PLATFORM_METRIC_REFERENCES.reposts],
+    ['bookmarks', 1, PLATFORM_METRIC_REFERENCES.bookmarks],
+    ['upvotes', 1, PLATFORM_METRIC_REFERENCES.upvotes],
+    ['stars', 1, PLATFORM_METRIC_REFERENCES.stars],
+  ];
+  const interactionValues = interactionSpecs.map(([key, weight, reference]) => {
+    const rawValue = key === 'stars' ? raw.stars ?? raw.raw?.stars ?? raw.repositoryMeta?.stars ?? raw.raw?.repositoryMeta?.stars
+      : key === 'upvotes' ? metrics.upvotes ?? raw.upvotes ?? raw.raw?.upvotes
+        : metrics[key];
+    const score = normalizedMetric(rawValue, reference);
+    return score == null ? null : { key, weight, score };
+  }).filter(Boolean);
+  const redditScore = normalizedMetric(raw.scoreText ?? raw.raw?.scoreText ?? metrics.score, PLATFORM_METRIC_REFERENCES.score);
+  if (redditScore != null) interactionValues.push({ key: 'scoreText', weight: 1, score: redditScore });
+
+  const reach = reachValues.length ? Math.max(...reachValues.map((item) => item.score)) : null;
+  const interaction = interactionValues.length
+    ? interactionValues.reduce((sum, item) => sum + item.score * item.weight, 0) / interactionValues.reduce((sum, item) => sum + item.weight, 0)
+    : null;
+  if (reach == null && interaction == null) return null;
+  let score = reach != null && interaction != null ? reach * 0.4 + interaction * 0.6 : reach ?? interaction;
+  const timestamp = timeValue(raw.updatedAt || raw.raw?.updatedAt || observedAt(hotspot));
+  if (timestamp) score *= decay(timestamp, asOf, 168);
+  const platform = platformOf(hotspot, raw, metrics);
+  return { platform, score: Number((score * 10).toFixed(2)), signals: [...reachValues.map((item) => item.key), ...interactionValues.map((item) => item.key)] };
+}
+
+function platformImpactOf(currentHotspots, asOf) {
+  const byPlatform = new Map();
+  for (const hotspot of currentHotspots) {
+    const signal = scorePlatformItem(hotspot, asOf);
+    if (!signal) continue;
+    const previous = byPlatform.get(signal.platform);
+    if (!previous || signal.score > previous.score) byPlatform.set(signal.platform, signal);
+  }
+  const strongest = [...byPlatform.values()].sort((left, right) => right.score - left.score || left.platform.localeCompare(right.platform));
+  if (!strongest.length) return { available: false, score: 0, byPlatform: [] };
+  const score = clamp(strongest[0].score + strongest.slice(1, 4).reduce((sum, item) => sum + item.score * 0.25, 0), 0, 10);
+  return { available: true, score: Number(score.toFixed(1)), byPlatform: strongest.map(({ platform, score: value, signals }) => ({ platform, score: value, signals })) };
 }
 
 function sourceStats({ currentHotspots, currentMemberships, features }) {
@@ -163,8 +257,22 @@ function scorePartsForClass(contentClass, { event, currentHotspots, currentMembe
 export function scoreClassifiedEvent({ event, currentMemberships = [], historicalMemberships = [], hotspotsById = new Map(), asOf = Date.now() }) {
   const base = scoreEventHeat({ event, currentMemberships, historicalMemberships, hotspotsById, asOf });
   const { contentClass, status } = classificationOf(event);
-  const scoreParts = scorePartsForClass(contentClass, { event, currentHotspots: currentMemberships.map((membership) => hotspotsById.get(Number(membership.hotspot_id))).filter(Boolean), currentMemberships, base, asOf });
-  const scoreValue = Number.isFinite(Number(scoreParts.scoreValue)) ? Number(scoreParts.scoreValue) : base.heatScore;
+  const currentHotspots = currentMemberships.map((membership) => hotspotsById.get(Number(membership.hotspot_id))).filter(Boolean);
+  const modelParts = scorePartsForClass(contentClass, { event, currentHotspots, currentMemberships, base, asOf });
+  const baseScoreValue = Number.isFinite(Number(modelParts.scoreValue)) ? Number(modelParts.scoreValue) : base.heatScore;
+  const platformImpact = platformImpactOf(currentHotspots, asOf);
+  // When counters are present, reserve 10% of T for observed platform impact.
+  // Missing counters are unknown rather than zero, so retain the full base score.
+  const scoreValue = platformImpact.available
+    ? Number(clamp(baseScoreValue * 0.9 + platformImpact.score, 0, 100).toFixed(1))
+    : baseScoreValue;
+  const scoreParts = {
+    ...modelParts,
+    baseScoreValue,
+    platformImpact: platformImpact.score,
+    platformImpactByPlatform: platformImpact.byPlatform,
+    scoreValue,
+  };
   const scoreModel = contentClass === 'news_event' ? 'T_account' : contentClass;
   return {
     ...base,
@@ -172,6 +280,9 @@ export function scoreClassifiedEvent({ event, currentMemberships = [], historica
     classificationStatus: status,
     scoreModel,
     scoreValue,
+    platformImpact: platformImpact.score,
+    platformImpactAvailable: platformImpact.available,
+    platformImpactByPlatform: platformImpact.byPlatform,
     heatScore: scoreValue,
     eventValue: scoreValue,
     t: scoreValue,
@@ -194,7 +305,7 @@ export function scoreEventHeat({ event, currentMemberships = [], historicalMembe
   const repeatDays = Math.max(1, seenDates.size || currentSeenDates.size || 1);
   const latestSeenAt = latestTimestamp([
     event.last_seen_at,
-    ...currentHotspots.map((hotspot) => hotspot.published_at || hotspot.created_at),
+    ...currentHotspots.map(observedAt),
   ]);
   const lastUpdateAt = event.event_state === 'new_update' || event.event_state === 'new_event'
     ? latestSeenAt : 0;
@@ -349,7 +460,7 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
     scoringVersion: EVENT_HEAT_RANKING_VERSION,
     generatedAt: new Date(asOf).toISOString(),
     batchId: batch.id,
-    scoring: { readerConnection: 40, readerImpact: 25, informationGain: 20, evidenceQuality: 10, freshness: 3, diffusion: 2, historyDecay: -15, eventValue: 100 },
+    scoring: { baseModel: 90, platformImpact: 10, platformMetricReferences: PLATFORM_METRIC_REFERENCES, platformImpactNormalization: 'per-metric log saturation; event-age half-life 7 days; per-platform maximum plus capped corroboration; missing metrics preserve the base score', readerConnection: 40, readerImpact: 25, informationGain: 20, evidenceQuality: 10, freshness: 3, diffusion: 2, historyDecay: -15, eventValue: 100 },
     scoringModels: { news_event: 'T_account', open_source_technology: 'T_technology', open_source_trend: 'T_trend', github_project: 'projectDiscoveryScore' },
     totalEvents: ranked.length,
     rankings,
