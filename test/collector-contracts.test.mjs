@@ -22,7 +22,7 @@ test('Collector Manifest、来源配置和标准输出执行严格校验',()=>{
 
 test('阶段 0 注册全部内置采集器清单但不提前切换执行实现',()=>{
   const registry=createBuiltinCollectorRegistry();
-  assert.deepEqual(registry.list().map((item)=>item.id),['browser-web-page','declarative-web-page','feed-collector','github-discovery-collector','reddit-collector','rsshub-collector','tech-twitter-collector','wechat-account-collector','x-search-collector']);
+  assert.deepEqual(registry.list().map((item)=>item.id),['browser-web-page','declarative-web-page','feed-collector','github-discovery-collector','paper-radar-collector','reddit-collector','rsshub-collector','tech-twitter-collector','wechat-account-collector','x-search-collector']);
   assert.equal(registry.resolveSourceType('reddit').manifest.id,'reddit-collector');
   assert.equal(registry.resolveSourceType('twitter').manifest.id,'rsshub-collector');
   assert.equal(registry.resolveSourceType('wechat').manifest.id,'wechat-account-collector');
