@@ -10,7 +10,11 @@ const errorDetail = (error) => error?.cause?.code ? `${error.message} (${error.c
 
 async function get(fetchImpl, url, extraHeaders = {}) {
   const response = await fetchImpl(url, { headers: { accept: 'application/json, application/atom+xml, application/rss+xml, application/xml', 'user-agent': USER_AGENT, ...extraHeaders }, signal: AbortSignal.timeout(25000) });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 300); } catch {}
+    throw new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`);
+  }
   return response;
 }
 
