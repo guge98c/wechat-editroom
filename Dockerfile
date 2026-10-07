@@ -38,8 +38,9 @@ RUN sed -i "s/server.listen(config.port, '127.0.0.1'/server.listen(config.port, 
 # 容器化 Host 白名单补丁：local-security.mjs 只信任 127.0.0.1/localhost/::1，
 # 局域网 IP 访问一律 403 HOST_NOT_ALLOWED。补丁改为支持环境变量
 # JIANZHI_TRUSTED_HOSTS（逗号分隔，如 "192.168.2.27"），部署时由 compose 注入。
+# 注意：sed 用 BRE，字面括号 ( ) 不能转义（\( \) 是分组标记），已在 NAS 实测通过。
 # 补丁后 grep 校验，不匹配即构建失败（fail loud，避免静默产出 403 镜像）
-RUN sed -i "s/new Set(\['127\.0\.0\.1', 'localhost', '::1'\]\)/new Set(['127.0.0.1', 'localhost', '::1', ...(process.env.JIANZHI_TRUSTED_HOSTS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)])/" server/platform/http/local-security.mjs \
+RUN sed -i "s/new Set(\['127\.0\.0\.1', 'localhost', '::1'\])/new Set(['127.0.0.1', 'localhost', '::1', ...(process.env.JIANZHI_TRUSTED_HOSTS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)])/" server/platform/http/local-security.mjs \
     && grep -q "JIANZHI_TRUSTED_HOSTS" server/platform/http/local-security.mjs
 
 EXPOSE 4317
