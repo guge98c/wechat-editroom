@@ -43,6 +43,10 @@ RUN sed -i "s/server.listen(config.port, '127.0.0.1'/server.listen(config.port, 
 RUN sed -i "s/new Set(\['127\.0\.0\.1', 'localhost', '::1'\])/new Set(['127.0.0.1', 'localhost', '::1', ...(process.env.JIANZHI_TRUSTED_HOSTS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)])/" server/platform/http/local-security.mjs \
     && grep -q "JIANZHI_TRUSTED_HOSTS" server/platform/http/local-security.mjs
 
+# 容器化写权限补丁：/app 归容器运行用户（1000:1001，与 compose user 一致）所有。
+# 否则 remote-plugins 凭据（.env.remote-plugins）写入报 EACCES: permission denied
+RUN chown -R 1000:1001 /app
+
 EXPOSE 4317
 
 CMD ["node", "--disable-warning=ExperimentalWarning", "server.mjs"]
