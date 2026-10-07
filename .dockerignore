@@ -1,0 +1,18 @@
+# 构建上下文排除（本地 docker build / GitHub Actions 共用）
+node_modules
+.git
+.github
+data
+articles
+topics
+social-cards
+output
+logs
+build
+site
+docs
+test
+likec4
+*.md
+*.cmd
+*.sh
