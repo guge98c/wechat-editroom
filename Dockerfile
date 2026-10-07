@@ -35,6 +35,14 @@ RUN apt-get update \
 # 容器化监听补丁：仅放开监听地址（0.8.0/0.9.x 硬编码 127.0.0.1，config 无 host 项）
 RUN sed -i "s/server.listen(config.port, '127.0.0.1'/server.listen(config.port, '0.0.0.0'/g" server.mjs
 
+# 容器化 Host 白名单补丁：local-security.mjs 只信任 127.0.0.1/localhost/::1，
+# 局域网 IP 访问一律 403 HOST_NOT_ALLOWED。补丁改为支持环境变量
+# JIANZHI_TRUSTED_HOSTS（逗号分隔，如 "192.168.2.27"），部署时由 compose 注入。
+# 补丁后 grep 校验，不匹配即构建失败（fail loud，避免静默产出 403 镜像）
+RUN sed -i "s/new Set(\['127\.0\.0\.1', 'localhost', '::1'\]\)/new Set(['127.0.0.1', 'localhost', '::1', ...(process.env.JIANZHI_TRUSTED_HOSTS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)])/" server/platform/http/local-security.mjs \
+    && grep -q "JIANZHI_TRUSTED_HOSTS" server/platform/http/local-security.mjs
+
 EXPOSE 4317
 
 CMD ["node", "--disable-warning=ExperimentalWarning", "server.mjs"]
+
