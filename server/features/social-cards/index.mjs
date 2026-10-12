@@ -19,11 +19,11 @@ export { SOCIAL_CARD_AI_VISUAL_ARTIFACTS, SOCIAL_CARD_AI_VISUAL_FAILURE_CODES, c
 export { SOCIAL_CARD_AI_VISUAL_STAGE_CONTRACT, createSocialCardAiVisualStageRecorder, writeSocialCardAiVisualSkillManifest } from './application/social-card-ai-visual-pipeline.mjs';
 export { AI_VISUAL_DOCUMENT_WRITE, filterAiVisualGenerationCatalog, runSocialCardAiVisualGenerationAgent } from './application/social-card-ai-visual-agent.mjs';
 
-export { CUSTOM_CONTENT_TYPES, CUSTOM_SOURCE_LEVELS, evaluateCardGate, evaluateClassifiedCardGate, evaluateCustomCardGate, evaluateEventCardGate } from './domain/social-card-gate.mjs';
+export { CUSTOM_CONTENT_TYPES, CUSTOM_SOURCE_LEVELS, evaluateCardGate, evaluateCustomCardGate, evaluateEventCardGate } from './domain/social-card-gate.mjs';
 export { buildCustomFactSheet, customFactMarkdown, customSourceUrl, parseLines, parsePointLine } from './application/custom-fact-service.mjs';
 export { createRepositoryCandidate } from './application/repository-candidate.mjs';
 export { BUILTIN_SOCIAL_CARD_STORYBOARD_SKILLS, SOCIAL_CARD_STORYBOARD_CONTRACTS, buildSocialCardFactEnvelope, buildSocialCardStoryboardSystemPrompt, toLegacySocialCardPromptInput } from './application/storyboard-contracts.mjs';
-export { SOCIAL_CONTENT_TYPES, SOCIAL_ROUTE_VERSION, contentTypeForSocialRoute, normalizeSocialContentClass, socialRouteForContentClass, socialRouteForContentType, socialStoryboardClassForContentClass, socialStoryboardSkillForContentClass } from './domain/social-routing.mjs';
+export { SOCIAL_ROUTE_VERSION, contentTypeForSocialRoute, socialRouteForCandidate, socialRouteForContentType, socialRouteForMaterialType, socialStoryboardClassForMaterialType, socialStoryboardSkillForMaterialType } from './domain/social-routing.mjs';
 export { CUSTOM_SOCIAL_AGENT_CAPABILITIES, runCustomSocialAgentTurn } from './application/agent/custom-social-adapter.mjs';
 export { SocialTemplateMetricsRepository, createSocialTemplateMetricsRepository } from './application/social-template-metrics-repository.mjs';
 export { SOCIAL_CARD_RENDERER_BLOCK_TYPES, SOCIAL_CARD_CHANNEL_BLOCK_TYPES, SOCIAL_CARD_TEMPLATE_PACKS, DEFAULT_SOCIAL_CARD_TEMPLATE_PACK, getSocialCardTemplatePack, listSocialCardTemplatePacks, socialCardTemplateEditorCatalog } from './rendering/social-card-template-registry.mjs';

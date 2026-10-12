@@ -174,10 +174,6 @@ export class Store {
     return this.repositories.eventResolution.upsertShadow(batchId, shadow);
   }
 
-  saveEventClassification(eventId, classification) {
-    return this.repositories.eventResolution.saveClassification(eventId, classification);
-  }
-
   getEventRecord(eventId) {
     return this.repositories.eventResolution.get(eventId);
   }

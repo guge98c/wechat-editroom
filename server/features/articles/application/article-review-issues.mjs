@@ -20,6 +20,7 @@ const ISSUE_LABELS = {
 const JSON_ARTIFACTS = new Map([
   ['03-title-risk.json', { stage: 'title', label: '标题检查' }],
   ['04-quality-gate.json', { stage: 'draft-quality', label: '初稿质量检查' }],
+  ['05-voice-quality-gate.json', { stage: 'voice', label: '风格门禁' }],
   ['06-quality-gate.json', { stage: 'daily-quality', label: '早报质量检查' }],
   ['06-review-quality-gate.json', { stage: 'review', label: '审稿检查' }],
   ['08-quality-gate.json', { stage: 'final-quality', label: '终稿质量检查' }],
@@ -104,14 +105,16 @@ export function buildArticleReviewIssueReport({ document = {}, artifacts = [], r
     const parsed = readJsonArtifact(artifact, readFile);
     if (!parsed) continue;
     sourceArtifacts.push({ id: artifact.id ?? null, name: artifact.name || fileName, stage: meta.stage });
-    const context = { artifact, stage: meta.stage, label: meta.label, type: meta.stage === 'title' ? 'title' : meta.stage === 'research' ? 'research' : meta.stage === 'review' ? 'review' : 'publication_compliance' };
+    const context = { artifact, stage: meta.stage, label: meta.label, type: meta.stage === 'title' ? 'title' : meta.stage === 'research' ? 'research' : meta.stage === 'review' ? 'review' : meta.stage === 'voice' ? 'style' : 'publication_compliance' };
     if (meta.stage === 'title') {
       for (const value of Array.isArray(parsed.titleBlockers) ? parsed.titleBlockers : []) addIssue(issues, { type: 'title', message: value }, context);
     } else if (meta.stage === 'research') {
       collectResearchIssues(issues, parsed, context);
-    } else if (meta.stage === 'publication') {
+    } else if (meta.stage === 'publication' || meta.stage === 'voice') {
       collectGateIssues(issues, parsed.gate, context);
-      for (const value of Array.isArray(parsed.scan?.titleBlockers) ? parsed.scan.titleBlockers : []) addIssue(issues, { type: 'title', message: value }, context);
+      if (meta.stage === 'publication') {
+        for (const value of Array.isArray(parsed.scan?.titleBlockers) ? parsed.scan.titleBlockers : []) addIssue(issues, { type: 'title', message: value }, context);
+      }
     } else {
       collectGateIssues(issues, parsed, context);
     }

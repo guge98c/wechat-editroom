@@ -88,16 +88,6 @@ export function applyWorkbenchSchema(db) {
         normalized_json TEXT NOT NULL DEFAULT '{}',
         resolver_version TEXT NOT NULL DEFAULT '',
         algorithm_version TEXT NOT NULL DEFAULT '',
-        content_class TEXT NOT NULL DEFAULT 'news_event',
-        classification_confidence REAL,
-        classification_reason TEXT NOT NULL DEFAULT '',
-        classification_evidence_json TEXT NOT NULL DEFAULT '[]',
-        classification_features_json TEXT NOT NULL DEFAULT '{}',
-        classification_missing_evidence_json TEXT NOT NULL DEFAULT '[]',
-        article_eligible INTEGER NOT NULL DEFAULT 1,
-        social_eligible INTEGER NOT NULL DEFAULT 1,
-        default_route TEXT NOT NULL DEFAULT 'editorial_review',
-        classification_status TEXT NOT NULL DEFAULT 'needs_review',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -198,12 +188,9 @@ export function applyWorkbenchSchema(db) {
         format TEXT NOT NULL DEFAULT '',
         material_type TEXT NOT NULL DEFAULT '',
         historical_type TEXT NOT NULL DEFAULT '',
-        content_class TEXT NOT NULL DEFAULT 'news_event',
-        classification_status TEXT NOT NULL DEFAULT 'needs_review',
-        classification_confidence REAL,
-        classification_reason TEXT NOT NULL DEFAULT '',
-        classification_evidence_json TEXT NOT NULL DEFAULT '[]',
-        classification_features_json TEXT NOT NULL DEFAULT '{}',
+        editorial_category TEXT NOT NULL DEFAULT '',
+        article_route_approved INTEGER NOT NULL DEFAULT 0,
+        article_route_evidence_json TEXT NOT NULL DEFAULT '[]',
         article_eligible INTEGER NOT NULL DEFAULT 1,
         article_eligibility_reason TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'pooled',
@@ -951,12 +938,8 @@ export function applyWorkbenchSchema(db) {
     if(!finalCandidateCols.has('format'))db.exec("ALTER TABLE candidates ADD COLUMN format TEXT NOT NULL DEFAULT ''");
     if(!finalCandidateCols.has('material_type'))db.exec("ALTER TABLE candidates ADD COLUMN material_type TEXT NOT NULL DEFAULT ''");
     if(!finalCandidateCols.has('historical_type'))db.exec("ALTER TABLE candidates ADD COLUMN historical_type TEXT NOT NULL DEFAULT ''");
-    if(!finalCandidateCols.has('content_class'))db.exec("ALTER TABLE candidates ADD COLUMN content_class TEXT NOT NULL DEFAULT 'news_event'");
-    if(!finalCandidateCols.has('classification_status'))db.exec("ALTER TABLE candidates ADD COLUMN classification_status TEXT NOT NULL DEFAULT 'needs_review'");
-    if(!finalCandidateCols.has('classification_confidence'))db.exec('ALTER TABLE candidates ADD COLUMN classification_confidence REAL');
-    if(!finalCandidateCols.has('classification_reason'))db.exec("ALTER TABLE candidates ADD COLUMN classification_reason TEXT NOT NULL DEFAULT ''");
-    if(!finalCandidateCols.has('classification_evidence_json'))db.exec("ALTER TABLE candidates ADD COLUMN classification_evidence_json TEXT NOT NULL DEFAULT '[]'");
-    if(!finalCandidateCols.has('classification_features_json'))db.exec("ALTER TABLE candidates ADD COLUMN classification_features_json TEXT NOT NULL DEFAULT '{}'");
+    if(!finalCandidateCols.has('editorial_category'))db.exec("ALTER TABLE candidates ADD COLUMN editorial_category TEXT NOT NULL DEFAULT ''");
+    if(!finalCandidateCols.has('article_route_approved'))db.exec('ALTER TABLE candidates ADD COLUMN article_route_approved INTEGER NOT NULL DEFAULT 0');
     if(!finalCandidateCols.has('article_eligible'))db.exec('ALTER TABLE candidates ADD COLUMN article_eligible INTEGER NOT NULL DEFAULT 1');
     if(!finalCandidateCols.has('article_eligibility_reason'))db.exec("ALTER TABLE candidates ADD COLUMN article_eligibility_reason TEXT NOT NULL DEFAULT ''");
     if (!candidateTracksExisted) {

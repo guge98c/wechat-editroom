@@ -31,7 +31,7 @@ const ALLOWED_SCORING_KEYS = new Set(['weights', 'eventValueWeight', 'researchVa
 const MIN_WRITER_SKILL_SAMPLES = 3;
 export const ALLOWED_SKILL_RULE_FILES = Object.freeze([
   'SKILL.md', 'TITLE_GUIDE.md', 'COPY_GUIDE.md', 'references/storyboard.md',
-  'references/copy-tool.md', 'references/copy-technology.md', 'references/copy-trend.md',
+  'references/copy-tool.md',
   'references/copy-event.md', 'references/copy-custom.md',
 ]);
 

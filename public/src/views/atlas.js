@@ -77,11 +77,11 @@ function bindAtlas() {
       });
       renderAtlas();
     }
-    const contentClassButton = event.target.closest("[data-atlas-content-class]");
-    if (contentClassButton && state.atlas) {
-      state.atlasFilters.contentClass = contentClassButton.dataset.atlasContentClass || "news_event";
-      $$('[data-atlas-content-class]').forEach((button) => {
-        const active = button === contentClassButton;
+    const categoryButton = event.target.closest("[data-atlas-category]");
+    if (categoryButton && state.atlas) {
+      state.atlasFilters.category = categoryButton.dataset.atlasCategory || "产品与技术动态";
+      $$('[data-atlas-category]').forEach((button) => {
+        const active = button === categoryButton;
         button.classList.toggle("active", active);
         button.setAttribute("aria-selected", String(active));
       });
@@ -223,36 +223,23 @@ function toggleGraphNode(nodeId) {
 const LENS_LABELS = { ...dimensionLabels, relation: "关系" };
 const DIMENSION_ROLES = dimensionRoles;
 const LENS_COLORS = { who: "#355f55", what: "#7a5c2e", where: "#6b4a7d", relation: "#9a4e42" };
-const CONTENT_CLASS_LABELS = {
-  github_project: "工具图文",
-  open_source_technology: "开源技术",
-  open_source_trend: "开源趋势",
-  news_event: "普通事件",
-};
-const CLASSIFICATION_STATUS_LABELS = { auto: "规则确认", model_validated: "模型确认", needs_review: "待复核", manual: "人工确认" };
+const EDITORIAL_CATEGORIES = ["产品与技术动态", "大厂与商业战略", "职场与组织变化", "开源项目与开发者生态", "行业趋势与市场变化", "政策与公共议题"];
 
-export function socialContentClassOf(item, fallback = "news_event") {
-  return item?.content_class || item?.contentClass || item?.classification?.content_class || item?.classification?.contentClass || fallback;
+export function socialMaterialTypeOf(item) {
+  return item?.repositoryProject || item?.materialType === "repository" || item?.repositoryMeta ? "repository" : "event";
 }
 
-export function socialPoolPresentation(contentClass, { eventSocial = false } = {}) {
-  if (contentClass === "github_project") return { label: "工具图文", target: "social-editor", poolRole: "工具图文" };
-  if (eventSocial || ["news_event", "open_source_technology", "open_source_trend"].includes(contentClass)) return { label: "事件图文", target: "social-event", poolRole: "事件热榜图文" };
+export function socialPoolPresentation(materialType, { eventSocial = false } = {}) {
+  if (materialType === "repository") return { label: "工具图文", target: "social-editor", poolRole: "工具图文" };
+  if (eventSocial || materialType === "event") return { label: "事件图文", target: "social-event", poolRole: "事件热榜图文" };
   return { label: "图文选题池", target: "social-topics", poolRole: "" };
 }
 
 function externalUrl(value) { return /^https?:\/\//.test(value) ? value : null; }
 
-function classificationHtml(classification) {
-  const contentClass = classification?.content_class || classification?.contentClass;
-  if (!contentClass) return "";
-  const label = CONTENT_CLASS_LABELS[contentClass] || contentClass;
-  const status = classification?.status || classification?.classification_status;
-  const statusLabel = CLASSIFICATION_STATUS_LABELS[status];
-  const route = classification?.default_route || classification?.defaultRoute;
-  const routeLabel = route === "social_cards" ? "默认图文" : route === "editorial_review" ? "文章/图文" : "待定";
-  const warning = classification?.reason || classification?.classification_reason || "";
-  return `<span class="content-class-badge content-class-${escapeHtml(contentClass)}" title="${escapeHtml(warning)}">${escapeHtml(label)}</span><span class="content-route-badge">${escapeHtml(routeLabel)}${statusLabel ? ` · ${escapeHtml(statusLabel)}` : ""}</span>`;
+function categoryBadge(item) {
+  const category = String(item?.editorial_category || item?.editorialCategory || item?.topic_category || "");
+  return EDITORIAL_CATEGORIES.includes(category) ? `<span class="dimension-tag editorial-category-badge">${escapeHtml(category)}</span>` : "";
 }
 
 function eventCardHtml(card) {
@@ -264,7 +251,7 @@ function eventCardHtml(card) {
   const timeline = Array.isArray(card.timeline) && card.timeline.length
     ? `<div class="event-card-row"><b>时间线</b><ul>${card.timeline.map((x) => `<li>${escapeHtml(x.time)} ${escapeHtml(x.fact)}</li>`).join("")}</ul></div>` : "";
   const background = card.background ? `<p class="event-card-bg">${escapeHtml(card.background)}</p>` : "";
-  return `<details class="event-card"><summary>${classificationHtml(card.classification)} 事件卡：${escapeHtml(card.conclusion)}</summary>${background}${list("已确认事实", card.confirmed_facts)}${increments}${list("分歧", card.disagreements)}${timeline}${list("待核内容", card.unverified)}${list("可写角度", card.angles)}</details>`;
+  return `<details class="event-card"><summary>事件卡：${escapeHtml(card.conclusion)}</summary>${background}${list("已确认事实", card.confirmed_facts)}${increments}${list("分歧", card.disagreements)}${timeline}${list("待核内容", card.unverified)}${list("可写角度", card.angles)}</details>`;
 }
 
 function atlasEvents() {
@@ -282,8 +269,8 @@ function atlasEvents() {
 
 function atlasHotlistItems() {
   if (!state.atlas) return [];
-  const contentClass = state.atlasFilters.contentClass || "news_event";
-  let items = state.atlas.eventHeatRankings?.[contentClass]?.items || (state.atlas.eventHotlist || []).filter((item) => (item.content_class || item.contentClass) === contentClass);
+  const category = state.atlasFilters.category || EDITORIAL_CATEGORIES[0];
+  let items = state.atlas.eventHeatRankings?.[category]?.items || [];
   const f = state.atlasFilters;
   if (f.scope !== "全部") items = items.filter((item) => (item.marketScopes || []).includes(f.scope));
   if (f.multi) items = items.filter((item) => Number(item.sourceCount || 0) > 1);
@@ -457,7 +444,7 @@ function renderDimensionCards(events) {
       }).join("");
       const summary = String(event.card?.conclusion || "").trim();
       const headline = event.representative_title || event.title || "";
-      return `<div class="hotword-event-ref"><span class="event-ref-summary">${classificationHtml(event.classification)} ${escapeHtml(summary || headline)}</span>${summary && headline ? `<small class="event-ref-title muted">${escapeHtml(headline)}</small>` : ""}${eventCardHtml(event.card)}<div class="hotword-event-links">${links}</div></div>`;
+      return `<div class="hotword-event-ref"><span class="event-ref-summary">${categoryBadge(event)} ${escapeHtml(summary || headline)}</span>${summary && headline ? `<small class="event-ref-title muted">${escapeHtml(headline)}</small>` : ""}${eventCardHtml(event.card)}<div class="hotword-event-links">${links}</div></div>`;
     }).join("");
     return `<article class="hotword-index-card dimension-card${isActive ? " hotword-index-active" : ""}" data-dimension-node="${escapeHtml(group.id)}">
       <div class="hotword-index-head"><h4><span class="dimension-tag dimension-${escapeHtml(group.type)}">${LENS_LABELS[group.type]}</span> ${escapeHtml(group.label)}</h4><span class="muted">维度分 ${group.score} · ${group.events.length} 个事件</span></div>
@@ -477,9 +464,8 @@ function renderEventHotlist() {
     return;
   }
   const stateLabels = { new_event: "新事件", new_update: "有增量", continuing: "持续", stale: "过时" };
-  const modelLabels = { news_event: "T_account", open_source_technology: "T_technology", open_source_trend: "T_trend", github_project: "projectReaderValue" };
-  const contentClass = state.atlasFilters.contentClass || "news_event";
-  const summary = `<div class="event-hotlist-summary">${escapeHtml(modelLabels[contentClass] || "分类评分")} 独立排序；默认展示前 ${Math.min(HOTLIST_DISPLAY_LIMIT, allItems.length)} 条，共 ${allItems.length} 条符合当前筛选。`;
+  const category = state.atlasFilters.category || EDITORIAL_CATEGORIES[0];
+  const summary = `<div class="event-hotlist-summary">${escapeHtml(category)}榜按账号相关度评分；默认展示前 ${Math.min(HOTLIST_DISPLAY_LIMIT, allItems.length)} 条，共 ${allItems.length} 条符合当前筛选。`;
   container.innerHTML = summary + items.map((item) => {
     const stateLabel = stateLabels[item.state] || item.state || "持续";
     const delta = item.rankDelta == null ? "新上榜" : (item.rankDelta > 0 ? `↑${item.rankDelta}` : item.rankDelta < 0 ? `↓${Math.abs(item.rankDelta)}` : "—");
@@ -492,8 +478,8 @@ function renderEventHotlist() {
       : '<span title="当前事件没有可用的平台计数">平台指标缺失</span>';
     return `<article class="event-hotlist-item event-hotlist-${escapeHtml(item.state || "continuing")}" data-event-detail="${escapeHtml(item.eventId)}" tabindex="0" aria-label="查看事件详情：${escapeHtml(item.title || item.eventId)}">
       <div class="event-hotlist-rank"><b>${item.rank}</b><span>${escapeHtml(delta)}</span></div>
-      <div class="event-hotlist-main"><h4>${classificationHtml(item)} ${escapeHtml(item.title || item.eventId)}</h4><div class="event-hotlist-meta"><span class="event-state">${escapeHtml(stateLabel)}</span><span>评分 ${item.scoreValue ?? item.heatScore}</span>${platformImpact}<span>${item.reportCount} 条报道</span><span>${item.sourceCount} 个来源</span><span>${escapeHtml(scopes)}</span></div><div class="event-hotlist-reasons">${reason}</div></div>
-      <div class="event-hotlist-score"><strong>${item.scoreValue ?? item.heatScore}</strong><button class="ink-button" data-event-hotlist-pool="${escapeHtml(item.eventId)}" data-event-tracks="article">加入文章池</button><button class="outline-button" data-event-hotlist-pool="${escapeHtml(item.eventId)}" data-event-tracks="social_cards">加入图文池</button></div>
+      <div class="event-hotlist-main"><h4>${categoryBadge(item)} ${escapeHtml(item.title || item.eventId)}</h4><div class="event-hotlist-meta"><span class="event-state">${escapeHtml(stateLabel)}</span><span>评分 ${item.scoreValue ?? item.heatScore}</span>${platformImpact}<span>${item.reportCount} 条报道</span><span>${item.sourceCount} 个来源</span><span>${escapeHtml(scopes)}</span></div><div class="event-hotlist-reasons">${reason}</div></div>
+      <div class="event-hotlist-score"><strong>${item.scoreValue ?? item.heatScore}</strong>${item.repositoryProject ? '' : `<button class="ink-button" data-event-hotlist-pool="${escapeHtml(item.eventId)}" data-event-tracks="article">加入文章池</button>`}<button class="outline-button" data-event-hotlist-pool="${escapeHtml(item.eventId)}" data-event-tracks="social_cards">加入图文池</button></div>
     </article>`;
   }).join("");
 }
@@ -555,7 +541,7 @@ function eventDetailHtml(event) {
     groups.get(key).push(article);
   }
   const card = event.card || {};
-  const classification = classificationHtml(event.classification || card.classification);
+  const category = categoryBadge(event);
   const facts = Array.isArray(card.confirmed_facts) && card.confirmed_facts.length
     ? `<section class="event-detail-section"><h3>已确认事实</h3><ul>${card.confirmed_facts.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : "";
   const increments = Array.isArray(card.source_increment) && card.source_increment.length
@@ -568,7 +554,7 @@ function eventDetailHtml(event) {
     const meta = [article.time, article.channel].filter(Boolean).map((value) => escapeHtml(value)).join(" · ");
     return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer"><b>${title}</b><small>${meta || "打开原文"}</small></a>` : `<div class="event-detail-source-static"><b>${title}</b><small>${meta}</small></div>`;
   }).join("")}</section>`).join("");
-  return `<div class="event-detail-badges">${classification}<span>${articles.length} 条报道</span><span>${groups.size} 个独立来源</span><span>${escapeHtml(event.market_scope || "待标注")}</span></div><p class="event-detail-conclusion">${escapeHtml(card.conclusion || event.representative_title || event.title || "")}</p>${card.background ? `<p class="event-detail-background">${escapeHtml(card.background)}</p>` : ""}${facts}${increments}${timeline}<section class="event-detail-section"><h3>来源报道</h3>${sources || '<p class="muted">暂无关联报道</p>'}</section>`;
+  return `<div class="event-detail-badges">${category}<span>${articles.length} 条报道</span><span>${groups.size} 个独立来源</span><span>${escapeHtml(event.market_scope || "待标注")}</span></div><p class="event-detail-conclusion">${escapeHtml(card.conclusion || event.representative_title || event.title || "")}</p>${card.background ? `<p class="event-detail-background">${escapeHtml(card.background)}</p>` : ""}${facts}${increments}${timeline}<section class="event-detail-section"><h3>来源报道</h3>${sources || '<p class="muted">暂无关联报道</p>'}</section>`;
 }
 
 function openEventDetail(eventId) {
@@ -638,24 +624,24 @@ function renderAtlas() {
 async function createCompositeFromEvent(batchId, eventId, tracks = ['article']) {
   const event = state.atlas?.events?.find((item) => item.event_id === eventId);
   if (!event) return toast("没有找到该事件，请先刷新热点全景");
-  const socialContentClass = socialContentClassOf(event);
-  const socialPresentation = socialPoolPresentation(socialContentClass, { eventSocial: true });
+  const socialMaterialType = socialMaterialTypeOf(event);
+  const socialPresentation = socialPoolPresentation(socialMaterialType, { eventSocial: true });
   const title = event.representative_title;
   const hotspotIds = event.hotspot_ids || [];
   if (!hotspotIds.length) return toast("该事件簇没有关联的热点");
   let message;
   if (hotspotIds.length === 1) {
     await request(`/api/batches/${encodeURIComponent(batchId)}/candidates`, {
-      method: "POST", body: JSON.stringify({ hotspotIds, tracks, socialContentClass: tracks.includes("social_cards") ? socialContentClass : undefined, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : undefined }),
+      method: "POST", body: JSON.stringify({ hotspotIds, tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : undefined }),
     });
     message = tracks.includes("social_cards") ? `已加入${socialPresentation.label}：${event.representative_title}` : `已加入选题池：${event.representative_title}`;
   } else {
     const candidate = await request(`/api/batches/${encodeURIComponent(batchId)}/candidates/composite`, {
-      method: "POST", body: JSON.stringify({ hotspotIds, title, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : "综合选题", tracks, socialContentClass: tracks.includes("social_cards") ? socialContentClass : undefined }),
+      method: "POST", body: JSON.stringify({ hotspotIds, title, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : "综合选题", tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined }),
     });
     message = tracks.includes("social_cards") ? `已从事件簇创建${socialPresentation.label}：${candidate.candidate_id}` : `已从事件簇创建综合选题：${candidate.candidate_id}`;
   }
-  offerPoolExit(tracks, message, { eventSocial: tracks.includes("social_cards"), socialContentClass });
+  offerPoolExit(tracks, message, { eventSocial: tracks.includes("social_cards"), socialMaterialType });
   const { default: loadTopicPool } = await import("./topics.js");
   loadTopicPool();
   if (document.querySelector(".nav-item.active")?.dataset.view === "overview") await loadAtlas();
@@ -664,29 +650,29 @@ async function createCompositeFromEvent(batchId, eventId, tracks = ['article']) 
 async function createCompositeFromHotlist(batchId, eventId, tracks = ['article']) {
   const item = state.atlas?.eventHotlist?.find((entry) => entry.eventId === eventId);
   if (!item) return toast("没有找到该热榜事件，请先刷新热点全景");
-  const socialContentClass = socialContentClassOf(item);
-  const socialPresentation = socialPoolPresentation(socialContentClass, { eventSocial: true });
+  const socialMaterialType = socialMaterialTypeOf(item);
+  const socialPresentation = socialPoolPresentation(socialMaterialType, { eventSocial: true });
   const hotspotIds = item.hotspotIds || [];
   if (!hotspotIds.length) return toast("该事件没有可进入研判的当前报道");
   const title = item.title;
   let message;
   if (hotspotIds.length === 1) {
-    await request(`/api/batches/${encodeURIComponent(batchId)}/candidates`, { method: "POST", body: JSON.stringify({ hotspotIds, tracks, socialContentClass: tracks.includes("social_cards") ? socialContentClass : undefined, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : undefined }) });
+    await request(`/api/batches/${encodeURIComponent(batchId)}/candidates`, { method: "POST", body: JSON.stringify({ hotspotIds, tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : undefined }) });
     message = tracks.includes("social_cards") ? `已加入${socialPresentation.label}：${item.title}` : `已加入选题池：${item.title}`;
   } else {
     const candidate = await request(`/api/batches/${encodeURIComponent(batchId)}/candidates/composite`, {
-      method: "POST", body: JSON.stringify({ hotspotIds, title, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : "事件热榜研判", tracks, socialContentClass: tracks.includes("social_cards") ? socialContentClass : undefined }),
+      method: "POST", body: JSON.stringify({ hotspotIds, title, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : "事件热榜研判", tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined }),
     });
     message = tracks.includes("social_cards") ? `已从事件热榜创建${socialPresentation.label}：${candidate.candidate_id}` : `已从事件热榜创建综合选题：${candidate.candidate_id}`;
   }
-  offerPoolExit(tracks, message, { eventSocial: tracks.includes("social_cards"), socialContentClass });
+  offerPoolExit(tracks, message, { eventSocial: tracks.includes("social_cards"), socialMaterialType });
   const { default: loadTopicPool } = await import("./topics.js");
   loadTopicPool();
 }
 
 // 创建成功后给出可跳转的出口，避免"成功了但不知道去哪看"的死路
-async function offerPoolExit(tracks, message, { eventSocial = false, socialContentClass = "" } = {}) {
-  const presentation = socialPoolPresentation(socialContentClass, { eventSocial });
+async function offerPoolExit(tracks, message, { eventSocial = false, socialMaterialType = "" } = {}) {
+  const presentation = socialPoolPresentation(socialMaterialType, { eventSocial });
   const target = tracks.includes("social_cards") ? presentation.target : "topics";
   const label = tracks.includes("social_cards") ? presentation.label : "文章选题池";
   if (await confirmAction(`${message}\n\n是否前往${label}查看？`, { confirmText: `前往${label}` })) window.go(target);
@@ -699,12 +685,12 @@ async function createCompositeFromDimension(batchId, nodeId, tracks = ['article'
   const eventIds = graph.edges.filter((edge) => edge.to === nodeId).map((edge) => edge.from.replace(/^event:/, ""));
   const hotspotIds = [...new Set(eventIds.flatMap((eventId) => (state.atlas.events || []).find((event) => event.event_id === eventId)?.hotspot_ids || []))];
   if (hotspotIds.length < 2) return toast("该维度分组关联的热点不足以创建综合选题");
-  const contentClasses = [...new Set(eventIds.map((eventId) => socialContentClassOf((state.atlas.events || []).find((event) => event.event_id === eventId), "")))];
-  const socialContentClass = contentClasses.length === 1 ? contentClasses[0] : "";
+  const materialTypes = [...new Set(eventIds.map((eventId) => socialMaterialTypeOf((state.atlas.events || []).find((event) => event.event_id === eventId))))];
+  const socialMaterialType = materialTypes.length === 1 ? materialTypes[0] : "event";
   const candidate = await request(`/api/batches/${encodeURIComponent(batchId)}/candidates/composite`, {
-    method: "POST", body: JSON.stringify({ hotspotIds, title: node.label, poolRole: DIMENSION_ROLES[node.type] || "维度选题", tracks, socialContentClass: tracks.includes("social_cards") && socialContentClass ? socialContentClass : undefined }),
+    method: "POST", body: JSON.stringify({ hotspotIds, title: node.label, poolRole: DIMENSION_ROLES[node.type] || "维度选题", tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined }),
   });
-  offerPoolExit(tracks, `已创建${LENS_LABELS[node.type]}维度选题：${candidate.candidate_id}（${hotspotIds.length} 条报道）`, { socialContentClass });
+  offerPoolExit(tracks, `已创建${LENS_LABELS[node.type]}维度选题：${candidate.candidate_id}（${hotspotIds.length} 条报道）`, { socialMaterialType });
   const { default: loadTopicPool } = await import("./topics.js");
   loadTopicPool();
 }

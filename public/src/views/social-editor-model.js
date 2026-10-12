@@ -32,15 +32,14 @@ export function cardBlockEditorHtml(block, index) {
 
 export function isCustomOutput(mode) { return String(mode || '').includes('custom-cards'); }
 export function isEventOutput(mode) { return String(mode || '').includes('event-cards'); }
-export function socialContentTypeFromOutput(mode, contentClass = '') {
-  if (contentClass === 'open_source_technology' || contentClass === 'open_source_trend' || String(mode || '').includes('technology-cards') || String(mode || '').includes('trend-cards')) return 'event';
-  if (contentClass === 'github_project' || String(mode || '').includes('tool-cards')) return 'repository';
+export function socialContentTypeFromOutput(mode) {
+  if (String(mode || '').includes('tool-cards')) return 'repository';
   if (isCustomOutput(mode)) return 'custom';
   if (isEventOutput(mode)) return 'event';
   return 'repository';
 }
-export function candidateMode(outputMode, contentClass = '') {
-  const type = socialContentTypeFromOutput(outputMode, contentClass);
+export function candidateMode(outputMode) {
+  const type = socialContentTypeFromOutput(outputMode);
   return type === 'custom' ? 'custom' : type === 'event' ? 'event' : 'tools';
 }
 

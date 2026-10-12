@@ -59,7 +59,7 @@ export function dimensionSelections(clusters, ranking = [], { whoLimit = 3, what
   const whatScore = (events) => {
     const whos = distinctWhos(events).size;
     const categories = new Set(events.map((event) => event.topic_category));
-    const tierBonus = categories.has('🏢 大厂战略') && categories.size > 1 ? 4 : 0;
+    const tierBonus = (categories.has('🏢 大厂战略') || categories.has('大厂与商业战略')) && categories.size > 1 ? 4 : 0;
     return Math.round(Math.max(...events.map(preScore)) + Math.min(whos, 4) * 3 + tierBonus + Math.min(disagreements(events), 3) * 2);
   };
   for (const [action, events] of byAction) {

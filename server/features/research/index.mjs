@@ -35,11 +35,11 @@ export { buildTopicScoreOperationsMetrics } from './application/topic-score-oper
 export { CandidateSelectionService } from './application/candidate-selection-service.mjs';
 export { createCandidateSelectionService } from './application/store-service-factory.mjs';
 export { classifyResearchFailure, recordResearchFailure } from './application/research-failure.mjs';
-export { EVENT_HEAT_RANKING_VERSION, buildEventHeatRanking, scoreClassifiedEvent, scoreEventHeat } from './domain/event-heat-ranking.mjs';
+export { EVENT_HEAT_RANKING_VERSION, buildEventHeatRanking, scoreEditorialEvent, scoreEventHeat } from './domain/event-heat-ranking.mjs';
 export { loadPreviousEventHeatItems } from './application/event-heat-ranking-service.mjs';
 export { PROJECT_READER_VALUE_TOP_K, PROJECT_READER_VALUE_TOP_K_OPTIONS, PROJECT_READER_VALUE_WEIGHTS, applyProjectReaderValuesToHeatRanking, attachProjectReaderValues, projectReaderValueInput, resolveProjectReaderValueTopK, scoreProjectReaderValue, selectProjectReaderValueCandidates } from './domain/project-reader-value.mjs';
 export { evaluateProjectReaderValue } from './application/project-reader-value-service.mjs';
-export { DISCUSSION_RESEARCH_SCHEMA_VERSION, DISCUSSION_RESEARCH_TOP_K, DISCUSSION_RESEARCH_TOP_K_OPTIONS, resolveDiscussionResearchTopK, DISCUSSION_RESEARCH_EXCLUDED_CONTENT_CLASSES, buildDiscussionResearch, discussionResearchMarkdown } from './domain/discussion-research.mjs';
+export { DISCUSSION_RESEARCH_SCHEMA_VERSION, DISCUSSION_RESEARCH_TOP_K, DISCUSSION_RESEARCH_TOP_K_OPTIONS, resolveDiscussionResearchTopK, DISCUSSION_RESEARCH_CATEGORIES, buildDiscussionResearch, discussionResearchMarkdown } from './domain/discussion-research.mjs';
 export { readDiscussionResearchContext } from './application/discussion-research-service.mjs';
 export {
   RESEARCH_SEARCH_SCHEMA_VERSION,
@@ -85,5 +85,5 @@ export { clusterItems as clusterResearchItems, isFreshForBatch as isResearchItem
 export { isResearchEligibleHotspot } from './domain/hotspot-pipeline-scope.mjs';
 export { buildHotspotAtlas } from './rendering/hotspot-atlas.mjs';
 export { dimensionPartsOf } from './domain/hotspot-dimensions.mjs';
-export { classifyContentRoute, deriveClassificationFeatures, isPureProjectEvent, normalizeEventClassification, scoreStatusForCard } from './domain/content-routing.mjs';
-export { G_SOCIAL_CLASS_CAPS, G_SOCIAL_THRESHOLDS, G_SOCIAL_WEIGHTS, scoreSocialCandidate } from './domain/social-scoring.mjs';
+export { classifyContentRoute, isPureProjectEvent, scoreStatusForCard } from './domain/content-routing.mjs';
+export { G_SOCIAL_MATERIAL_CAPS, G_SOCIAL_THRESHOLDS, G_SOCIAL_WEIGHTS, scoreSocialCandidate } from './domain/social-scoring.mjs';

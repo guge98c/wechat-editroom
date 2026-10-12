@@ -35,6 +35,17 @@ async function requestStoryboardAi(url, options={}){
   finally{clearTimeout(timer);}
 }
 
+function jsonErrorLocation(error, value){
+  const position=String(error?.message||'').match(/position\s+(\d+)/i);
+  if(position){
+    const offset=Math.min(Number(position[1]),value.length);
+    const prefix=value.slice(0,offset),line=prefix.split('\n').length,column=offset-(prefix.lastIndexOf('\n')+1)+1;
+    return {offset,line,column};
+  }
+  const lineColumn=String(error?.message||'').match(/line\s+(\d+)\s+column\s+(\d+)/i);
+  return lineColumn?{line:Number(lineColumn[1]),column:Number(lineColumn[2])}:null;
+}
+
 const CARD_LAYOUT_LABELS={auto:'自动推荐',poster:'海报大字',editorial:'杂志分栏',data:'数据报告',checklist:'卡片清单',steps:'教程步骤',minimal:'极简留白'};
 const CARD_LAYOUT_STATUS={recommended:'自动推荐',storyboard:'故事板指定',manual:'手动指定',group:'整组指定',fallback:'自动降级'};
 const CARD_ROLE_LABELS={cover:'封面',concept:'概念',feature:'功能',steps:'步骤',data:'数据',compare:'对比',evidence:'证据',timeline:'时间线',risk:'风险',ending:'结尾'};
@@ -98,7 +109,7 @@ function updateSocialSkillSummary(){
 async function loadSocialSkillControls(data){
   const entryPoint=SOCIAL_ENTRY_POINTS[selectedContentType];
   const contentType=socialRoutingContentType(data);
-  const recommendedSkillId=selectedContentType==='event'?(data.candidate?.content_class==='open_source_technology'?'open-source-technology-storyboard':data.candidate?.content_class==='open_source_trend'?'open-source-trend-storyboard':'event-card-storyboard'):'';
+  const recommendedSkillId=selectedContentType==='event'?'event-card-storyboard':'';
   socialSkillSlots=await loadStageSkillControls(
     document.getElementById('social-stage-skills'),
     `/api/creation-entry-points/${encodeURIComponent(entryPoint)}/social-card-stage-skills?contentType=${encodeURIComponent(contentType)}&recommendedSkillId=${encodeURIComponent(recommendedSkillId)}`,
@@ -550,10 +561,10 @@ async function loadSocialEditor(view) {
   setupSocialTabNavigation();
   const batch=state.batches.find((item)=>item.id===state.activeBatchId); if(!batch)return;
   const all=await request(`/api/batches/${encodeURIComponent(batch.id)}/candidates?track=social_cards`);
-  const candidates=all.filter((item)=>candidateMode(item.output_mode,item.content_class)===currentMode);
+  const candidates=all.filter((item)=>candidateMode(item.output_mode)===currentMode);
   const layout=MODE_LAYOUT[currentMode]||MODE_LAYOUT.tools;
   const nav=document.getElementById("social-editor-candidates");
-  nav.innerHTML=candidates.length?candidates.map((item)=>{const modeLabel=isCustomOutput(item.output_mode)?(item.output_mode==='xiaohongshu-custom-cards'?'自定义 · 小红书':'自定义 · 公众号'):item.content_class==='open_source_technology'?'事件图文 · 开源技术':item.content_class==='open_source_trend'?'事件图文 · 开源趋势':isEventOutput(item.output_mode)?'事件图文':'';return `<button type="button" class="social-editor-candidate" data-social-candidate="${item.id}"><b>${escapeHtml(item.candidate_id)}</b><span>${escapeHtml(item.hotspot_title)}</span><em>${escapeHtml(modeLabel||item.repository_description||item.social_selection_reason||'暂无仓库描述')}</em><small>${escapeHtml(item.track_status||'pooled')}${item.social_selection_reason?` · ${escapeHtml(item.social_selection_reason)}`:''}</small></button>`;}).join(''):`<div class="empty-state">${layout.empty}</div>`;
+  nav.innerHTML=candidates.length?candidates.map((item)=>{const modeLabel=isCustomOutput(item.output_mode)?(item.output_mode==='xiaohongshu-custom-cards'?'自定义 · 小红书':'自定义 · 公众号'):isEventOutput(item.output_mode)?'事件图文':'';return `<button type="button" class="social-editor-candidate" data-social-candidate="${item.id}"><b>${escapeHtml(item.candidate_id)}</b><span>${escapeHtml(item.hotspot_title)}</span><em>${escapeHtml(modeLabel||item.repository_description||item.social_selection_reason||'暂无仓库描述')}</em><small>${escapeHtml(item.track_status||'pooled')}${item.social_selection_reason?` · ${escapeHtml(item.social_selection_reason)}`:''}</small></button>`;}).join(''):`<div class="empty-state">${layout.empty}</div>`;
   requestAnimationFrame(updateSocialTabControls);
   if(candidates.length){await openSocialEditor(selectedId&&candidates.some((x)=>x.id===selectedId)?selectedId:candidates[0].id);}
   else{selectedId=null;document.getElementById("social-editor-fields").hidden=true;const empty=document.getElementById("social-editor-empty");empty.innerHTML=layout.empty;empty.hidden=false;}
@@ -619,7 +630,7 @@ if(!window.__socialPageEditorBound){window.__socialPageEditorBound=true;
     const source=currentCardPlan[pageNumber-1];if(!source||!article)return;
     const contentBlocks=[];
     try{
-      article.querySelectorAll('[data-storyboard-block]').forEach((node)=>{
+      article.querySelectorAll('[data-storyboard-block]').forEach((node,blockIndex)=>{
         const type=node.querySelector('[data-storyboard-block-type]')?.value||'text';
         const block={type,title:node.querySelector('[data-storyboard-block-title]')?.value.trim()||''};
         const supplementSlot=String(node.dataset.supplementSlotId||'').trim();
@@ -630,11 +641,30 @@ if(!window.__socialPageEditorBound){window.__socialPageEditorBound=true;
         if(Array.isArray(factIds)&&factIds.length)block.fact_ids=factIds.map(String);
         if(Array.isArray(sourceRefs)&&sourceRefs.length)block.source_refs=sourceRefs.map(String);
         const field=node.querySelector('[data-storyboard-block-content]');
-        if(isStructuredCardBlockType(type))Object.assign(block,JSON.parse(field.value||'{}'),{content:''});
+        if(isStructuredCardBlockType(type)){
+          const rawJson=field?.value||'{}';let structuredContent;
+          try{structuredContent=JSON.parse(rawJson);}
+          catch(error){error.storyboardBlockIndex=blockIndex;error.storyboardRawJson=rawJson;error.storyboardField=field;throw error;}
+          if(!structuredContent||typeof structuredContent!=='object'||Array.isArray(structuredContent)){
+            const error=new Error('结构化内容必须是 JSON 对象');error.storyboardBlockIndex=blockIndex;error.storyboardField=field;throw error;
+          }
+          Object.assign(block,structuredContent,{content:''});
+        }
         else block.content=field?.value.trim()||'';
         contentBlocks.push(block);
       });
-    }catch(error){toast(error instanceof SyntaxError?'结构化内容必须是有效 JSON':`内容块读取失败：${error.message}`,'error');return;}
+    }catch(error){
+      if(error instanceof SyntaxError&&Number.isInteger(error.storyboardBlockIndex)){
+        const field=error.storyboardField,location=jsonErrorLocation(error,error.storyboardRawJson||'');
+        field?.focus();
+        if(location?.offset!=null)field?.setSelectionRange(location.offset,location.offset);
+        toast(`第 ${pageNumber} 页内容块 ${error.storyboardBlockIndex+1} 的 JSON 格式无效${location?`（第 ${location.line} 行，第 ${location.column} 列）`:''}，请检查引号、逗号和括号。`,'error');
+      }else if(error?.message==='结构化内容必须是 JSON 对象'){
+        error.storyboardField?.focus();
+        toast(`第 ${pageNumber} 页内容块 ${error.storyboardBlockIndex+1} 必须填写 JSON 对象（用 { } 包裹）。`,'error');
+      }else toast(`内容块读取失败：${error.message}`,'error');
+      return;
+    }
     const originalText=button.textContent;button.disabled=true;button.textContent='保存中…';
     try{
       const data=await request(`/api/candidates/${selectedId}/card-pages/${pageNumber}`,{method:'PUT',body:JSON.stringify({

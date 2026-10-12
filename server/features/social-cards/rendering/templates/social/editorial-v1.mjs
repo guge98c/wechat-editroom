@@ -43,8 +43,6 @@ function selected(selection, index) {
 function pageBrand({ contentType, channelMode, sourceLabel, repository, topic }) {
   const source = sourceLabel || repository || topic;
   if (contentType === 'event') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `EVENT DESK / ${source}`;
-  if (contentType === 'technology') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `TECH DESK / ${source}`;
-  if (contentType === 'trend') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `TREND DESK / ${source}`;
   if (contentType === 'custom') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `CUSTOM / ${source}`;
   return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `OPEN SOURCE / ${source}`;
 }
@@ -84,7 +82,7 @@ export function renderEditorialStoryboardSections({
     const densityAdjustment = selected(expandedDensityPages, index) ? 'expanded' : selected(relaxedDensityPages, index) ? 'relaxed' : 'none';
     const label = labels[role] || 'FIELD NOTE';
     const brand = pageBrand({ contentType, channelMode, sourceLabel, repository, topic });
-    const footer = disclosure || (contentType === 'event' ? '据公开素材整理 · 未核实内容已标注' : contentType === 'technology' ? '据开源技术资料整理 · 机制与性能以来源为准' : contentType === 'trend' ? '据公开开源信号整理 · 趋势判断不等同于事实' : contentType === 'custom' ? '内容整理自作者素材 · 建议性内容未实测' : '基于项目文档整理 · 未实际运行');
+    const footer = disclosure || (contentType === 'event' ? '据公开素材整理 · 未核实内容已标注' : contentType === 'custom' ? '内容整理自作者素材 · 建议性内容未实测' : '基于项目文档整理 · 未实际运行');
     const defaults = { cover: 'paper-poster', concept: 'margin-thesis', feature: 'column-notes', steps: 'numbered-margin', data: 'data-table', compare: 'compare-sheet', evidence: 'source-ledger', timeline: 'timeline-strip', risk: 'risk-note', ending: 'closing-editor' };
     const requested = String(page.layout_intent || '').trim();
     const templateId = EDITORIAL_TEMPLATE_IDS.has(requested) ? requested : (defaults[role] || 'margin-thesis');

@@ -1,17 +1,17 @@
 import { selectSkillPromptReferences } from '../../../platform/llm/skill-runtime.mjs';
 
-function copyReferences(contentType, storyboardClass = contentType) {
+function copyReferences(contentType) {
   const primary = contentType === 'event'
-    ? (storyboardClass === 'technology' ? 'references\\copy-technology.md' : storyboardClass === 'trend' ? 'references\\copy-trend.md' : 'references\\copy-event.md')
+    ? 'references\\copy-event.md'
     : contentType === 'custom' ? 'references\\copy-custom.md' : 'references\\copy-tool.md';
   const legacy = contentType === 'event' ? 'references\\wechat-event-cards.md'
     : contentType === 'custom' ? 'references\\custom-cards.md' : 'references\\wechat-tool-cards.md';
   return [primary, legacy];
 }
 
-export function buildSocialCardCopySkillPrompt(skillPrompt, { contentType, storyboardClass } = {}) {
+export function buildSocialCardCopySkillPrompt(skillPrompt, { contentType } = {}) {
   return selectSkillPromptReferences(skillPrompt, {
-    include: ['COPY_GUIDE.md', ...copyReferences(contentType, storyboardClass)],
+    include: ['COPY_GUIDE.md', ...copyReferences(contentType)],
   });
 }
 

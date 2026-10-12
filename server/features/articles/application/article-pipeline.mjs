@@ -416,10 +416,11 @@ ${article}`},
   const gate=decision.value&&typeof decision.value==='object'?decision.value:{pass:false,issues:[]};
   const issues=Array.isArray(gate.issues)?gate.issues:[];
   if(gate.pass!==true&&issues.length===0)issues.push({type:'voice_gate_uncertain',message:'风格门禁未能确认通过，需要人工检查自然表达',evidence:'',repair:'编辑判断是否存在重复、空泛或机械模板；不要为通过门禁而机械改写'});
-  const invalidEvidence=issues.filter((issue)=>!String(issue?.evidence||'').trim()||!String(article||'').includes(String(issue.evidence).trim()));
+  const normalizedIssues=issues.map((issue)=>({...issue,evidence:String(issue?.evidence||issue?.quote||'').trim()}));
+  const invalidEvidence=normalizedIssues.filter((issue)=>!issue.evidence||!String(article||'').includes(issue.evidence));
   return invalidEvidence.length
-    ? {...gate,pass:false,issues:[...issues,...invalidEvidence.map((issue)=>({type:'voice_gate_evidence',message:'风格门禁问题缺少可在原文定位的证据引文，需人工复核',evidence:'',repair:'重新检查原文；只保留可精确定位且影响阅读体验的问题'}))]}
-    : {...gate,pass:gate.pass===true&&issues.length===0,issues};
+    ? {...gate,pass:false,issues:[...normalizedIssues,...invalidEvidence.map((issue)=>({type:'voice_gate_evidence',message:'风格门禁问题缺少可在原文定位的证据引文，需人工复核',evidence:'',repair:'重新检查原文；只保留可精确定位且影响阅读体验的问题'}))]}
+    : {...gate,pass:gate.pass===true&&normalizedIssues.length===0,issues:normalizedIssues};
 }
 
 async function repairArticleForPublicationCompliance({ gateway, orchestratorSkill, reviewerSkill, provider, batchId, candidateId, article, factBase, publicationClaimRegister, publicationScan, issues, researchPoints, rejectedAngles, writingStance = 'analysis', preserveVisuals = false, maxOutputTokens = 6500 }) {
@@ -477,9 +478,9 @@ ${current}`,maxOutputTokens);
 
 export async function runArticlePipeline({gateway,store,batchId,candidateId,provider,workspaceRoot,snapshotId=null,skillSelection=null,stageSelections=null,articleLength=null,rootRunId=null,workflowRunId=null,onProgress=()=>{}}) {
   const candidate=store.getCandidate(candidateId); if(!candidate||candidate.batch_id!==batchId)throw new Error('候选不存在或不属于当前批次');
-  const parseSnapshot = (value, fallback) => { try { const parsed = JSON.parse(value || ''); return parsed && typeof parsed === 'object' ? parsed : fallback; } catch { return fallback; } };
-  const classification = { content_class: candidate.content_class || 'news_event', status: candidate.classification_status || 'needs_review', confidence: candidate.classification_confidence,
-    reason: candidate.classification_reason || '', evidence: parseSnapshot(candidate.classification_evidence_json, []), features: parseSnapshot(candidate.classification_features_json, {}) };
+  const classification = { editorial_category: candidate.editorial_category || '', material_type: candidate.material_type || '',
+    article_route_approved: Boolean(candidate.article_route_approved), article_eligible: Boolean(candidate.article_eligible),
+    article_eligibility_reason: candidate.article_eligibility_reason || '' };
   const routeSnapshot = String(candidate.content_route || '').trim();
   const routeGate = (candidate.article_eligible === false || Number(candidate.article_eligible) === 0 || (routeSnapshot && routeSnapshot !== 'article'))
     ? { eligible: false, reason: candidate.article_eligibility_reason || '候选尚未取得文章路线资格' }
@@ -730,12 +731,7 @@ export async function runArticlePipeline({gateway,store,batchId,candidateId,prov
   artifact(store,batchId,'风格门禁','05-voice-quality-gate.json',voiceGatePath,{candidateId,rootRunId,workflowRunId,stageId:'article-pipeline'});
   recordStage('voice-quality-gate',stageSkills['article-reviewer'],['05-humanized.md'],'05-voice-quality-gate.json',voiceGate.pass?'passed':'needs_review');
   if(!voiceGate.pass){
-    const stageManifestPath=path.join(workdir,'00-stage-executions.json');
-    writeFile(stageManifestPath,JSON.stringify({generatedAt:new Date().toISOString(),stages:stageExecutions},null,2));
-    artifact(store,batchId,'待审文章','05-humanized.md',p05,{candidateId,rootRunId,workflowRunId,stageId:'article-pipeline'});
-    artifact(store,batchId,'阶段执行清单','00-stage-executions.json',stageManifestPath,{candidateId,rootRunId,workflowRunId,stageId:'article-pipeline'});
-    store.saveDocument({batchId,candidateId,kind:'draft',title:extractArticleTitle(human),content:human,filePath:p05,status:'needs_review'});
-    throw new Error(`风格门禁返修后仍未通过，已保留待审文稿与证据：${issueList(voiceGate.issues).join('；')}`);
+    onProgress(`风格门禁返修后仍有待处理建议：${issueList(voiceGate.issues).join('；')}；继续生成可编辑终稿，完成后交由编辑确认`);
   }
   onProgress('Step 5 审稿与事实/逻辑/风险门禁');
   const reviewSystem=stageSystem('review',stageSkills['article-reviewer']);
@@ -918,7 +914,8 @@ export async function runArticlePipeline({gateway,store,batchId,candidateId,prov
   store.saveDocument({batchId,candidateId,kind:'draft',title:draftTitle,content:draft,filePath:p04,status:'draft'});
   const finalTitleRisk=scanPublicationRisk({article:final,factBase});
   const needsEditorialReview = Boolean(
-    finalTitleRisk.titleBlockers.length
+    !voiceGate.pass
+      || finalTitleRisk.titleBlockers.length
       || articleGateNeedsEditorialReview(draftQuality)
       || articleGateNeedsEditorialReview(reviewDecision)
       || articleGateNeedsEditorialReview(finalQuality)
@@ -1014,7 +1011,9 @@ export async function runArticleReview({ gateway, store, batchId, candidateId = 
   writeFile(publicationPath, JSON.stringify({ generatedAt: new Date().toISOString(), reviewMode: 'manual-rerun', scan: publicationScan, gate: publicationQuality }, null, 2));
   artifact(store, batchId, '发布合规门禁', '10-publication-compliance.json', publicationPath, { candidateId, rootRunId, workflowRunId, stageId: 'article-review' });
 
-  const needsReview = articleGateNeedsEditorialReview(quality) || articleGateNeedsEditorialReview(reviewDecision) || articleGateNeedsEditorialReview(publicationQuality);
+  const voiceGateArtifact = readJsonIfPresent(path.join(workdir, '05-voice-quality-gate.json'), {});
+  const voiceGateNeedsReview = voiceGateArtifact.pass === false || voiceGateArtifact.gate?.pass === false;
+  const needsReview = voiceGateNeedsReview || articleGateNeedsEditorialReview(quality) || articleGateNeedsEditorialReview(reviewDecision) || articleGateNeedsEditorialReview(publicationQuality);
   const status = isDraft ? 'draft' : needsReview ? 'needs_review' : 'finalized';
   const saved = store.saveDocument({ batchId, candidateId, kind: documentKind, title: document.title, content: article, filePath: document.file_path, status, reviewState: needsReview ? 'needs_review' : 'passed' });
   onProgress(needsReview ? '自动审核完成：仍有待编辑处理的问题' : '自动审核完成：当前文稿已通过');

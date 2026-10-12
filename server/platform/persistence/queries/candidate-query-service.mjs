@@ -17,7 +17,7 @@ function socialCandidatePresentation(rawJson, factSheet, socialScore) {
     return { repository_description: description, social_selection_reason: reasons.slice(0, 4).join(' · ') || '突发事件图文' };
   }
   if (scoreModel === 'g_social-v1') {
-    const label = candidateClassLabel(socialScore?.score?.contentClass);
+    const label = String(socialScore?.score?.materialType || candidate.material_type || candidate.editorial_category || '事件图文');
     const reasons = [label, Number(score.factSupport) >= 60 ? '事实支撑充分' : null, Number(score.visualPotential) >= 60 ? '适合图文表达' : null,
       Number(score.readerValue) >= 45 ? '读者价值明确' : null, Number(score.productionReadiness) >= 60 ? '生产资料较完整' : null,
       score.qualificationReason && score.qualificationStatus !== 'auto_eligible' ? score.qualificationReason : null].filter(Boolean);
@@ -35,10 +35,6 @@ function socialCandidatePresentation(rawJson, factSheet, socialScore) {
     .filter(([, value]) => Number(value) >= 12).sort((left, right) => Number(right[1]) - Number(left[1]));
   if (dimensions[0]) reasons.push(dimensions[0][0]);
   return { repository_description: description, social_selection_reason: reasons.slice(0, 4).join(' · ') };
-}
-
-function candidateClassLabel(contentClass) {
-  return { github_project: 'GitHub 项目图文', news_event: '事件图文', open_source_technology: '开源技术图文', open_source_trend: '开源趋势图文' }[String(contentClass || '')] || '图文候选';
 }
 
 function displayCompositeTitle(candidate, hotspots) {
@@ -106,7 +102,7 @@ export class CandidateQueryService {
     const all = this.db.prepare(`SELECT c.id, c.hotspot_id, c.candidate_id, c.pool_role, c.risk_level,
       c.dimension, c.distribution_lane, c.reader_stake, c.reader_stake_score,
       c.research_value, c.competition_penalty, c.f_score, c.event_value, c.article_value,
-      c.content_route, c.score_status, c.score_warning, c.content_class, c.status,
+      c.content_route, c.score_status, c.score_warning, c.editorial_category, c.material_type, c.article_route_approved, c.article_eligible, c.article_eligibility_reason, c.status,
       c.composite, c.hotspot_titles,
       h.title AS hotspot_title, h.source, h.source_group, h.source_name,
       e.brief_status,

@@ -6,9 +6,9 @@
 .view .panel-head { gap: 18px; }
 .view .panel-head h3, .view .workspace-head h3 { font-family: var(--body); font-weight: 650; }
 .view .panel-head small, .view .workspace-head small { color: var(--muted); }
-.view .scope-tabs, .view .content-class-tabs { border-radius: 6px; overflow: hidden; }
-.view .scope-tabs button, .view .content-class-tabs button { color: var(--muted); background: var(--surface); }
-.view .scope-tabs button.active, .view .content-class-tabs button.active { color: var(--ink); background: var(--blue-soft); box-shadow: inset 0 -2px var(--blue); }
+.view .scope-tabs, .view .editorial-category-tabs { border-radius: 6px; overflow: hidden; }
+.view .scope-tabs button, .view .editorial-category-tabs button { color: var(--muted); background: var(--surface); }
+.view .scope-tabs button.active, .view .editorial-category-tabs button.active { color: var(--ink); background: var(--blue-soft); box-shadow: inset 0 -2px var(--blue); }
 
 /* Today: task board instead of a poster-like dashboard. */
 #view-dashboard .home-primary {

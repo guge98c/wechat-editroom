@@ -41,7 +41,7 @@ function metadataForRow(row = {}) {
 
 function normalizeRows(rows = []) {
   return (Array.isArray(rows) ? rows : []).filter((row) => row && ['confirmed', 'auto_confirmed'].includes(row.match_status || row.status)
-    && (row.content_type === 'social' || row.artifact_type === '图文发布文案' || row.content_class === 'github_project'))
+    && (row.content_type === 'social' || row.artifact_type === '图文发布文案'))
     .map((row) => {
       const metadata = metadataForRow(row);
       return {
@@ -123,7 +123,7 @@ function adjustmentForItem(item, feedback) {
   return Math.max(-PROJECT_DISCOVERY_FEEDBACK_DELTA_LIMITS.total, Math.min(PROJECT_DISCOVERY_FEEDBACK_DELTA_LIMITS.total, scenarioDelta + typeDelta));
 }
 
-function isProject(item) { return item?.contentClass === 'github_project' || item?.content_class === 'github_project' || Boolean(item?.repositoryMeta); }
+function isProject(item) { return item?.repositoryProject === true || item?.materialType === 'repository' || Boolean(item?.repositoryMeta); }
 
 export function projectDiscoveryFeedbackAdjustment(item, feedback) {
   if (!isProject(item)) return 0;
@@ -149,8 +149,8 @@ export function applyProjectDiscoveryFeedbackToHeatRanking(eventHeatRanking, fee
     return { ...next, baselineScoreValue: finite(item.scoreValue ?? item.heatScore), scoreValue, heatScore: scoreValue, eventValue: scoreValue, t: scoreValue, scoreModel: `${item.scoreModel || 'projectDiscoveryScore'}+feedback-v1` };
   };
   const items = rerank((eventHeatRanking.items || []).map(adjust).sort((a, b) => finite(b.scoreValue) - finite(a.scoreValue) || String(a.eventId || '').localeCompare(String(b.eventId || ''))));
-  const projectBoard = items.filter((item) => item.contentClass === 'github_project').map((item, index) => ({ ...item, rank: index + 1, boardRank: index + 1, rankScope: 'github_project' }));
-  return { ...eventHeatRanking, generatedAt: new Date().toISOString(), items, rankings: { ...(eventHeatRanking.rankings || {}), github_project: { ...(eventHeatRanking.rankings?.github_project || {}), scoreModel: 'projectDiscoveryScore+feedback-v1', items: projectBoard, totalEvents: projectBoard.length } } };
+  const projectBoard = items.filter(isProject).map((item, index) => ({ ...item, rank: index + 1, boardRank: index + 1, rankScope: 'repository_projects' }));
+  return { ...eventHeatRanking, generatedAt: new Date().toISOString(), items, rankings: { ...(eventHeatRanking.rankings || {}), repository_projects: { ...(eventHeatRanking.rankings?.repository_projects || {}), materialType: 'repository', scoreModel: 'projectDiscoveryScore+feedback-v1', items: projectBoard, totalEvents: projectBoard.length } } };
 }
 
 export function applyProjectDiscoveryFeedbackToRanking(ranking = [], feedback = null) {

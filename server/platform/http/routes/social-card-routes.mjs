@@ -1,5 +1,5 @@
 import { bindGenerationSnapshot, createRequestHarnessGateway, prepareSkillRun, resolveSkillToolPolicy } from '../../skills/pipeline-runtime.mjs';
-import { buildSocialCardFactEnvelope, buildSocialCardStoryboardSystemPrompt, enrichEventAnalysis, eventGroupsForCandidate, socialStoryboardSkillForContentClass, toLegacySocialCardPromptInput } from '../../../features/social-cards/index.mjs';
+import { buildSocialCardFactEnvelope, buildSocialCardStoryboardSystemPrompt, enrichEventAnalysis, eventGroupsForCandidate, socialStoryboardSkillForMaterialType, toLegacySocialCardPromptInput } from '../../../features/social-cards/index.mjs';
 import { listSocialCardStageSkillSlots, resolveSocialCardStageSkills } from '../../skills/entry-routing.mjs';
 import { requestGitHubJson } from '../../plugin-sdk/github-client.mjs';
 import { pipeFile } from '../route-helpers.mjs';
@@ -144,7 +144,7 @@ export async function handleSocialCardRoutes(context) {
     try{
       const entryPoint=SOCIAL_CARD_ENTRY_POINTS[contentType];
       const routingContentType=contentType==='custom'?String(facts?.data?.content_type||''):contentType;
-      const recommendedSkillId=contentType==='event'?socialStoryboardSkillForContentClass(candidate.content_class):'';
+      const recommendedSkillId=contentType==='event'?socialStoryboardSkillForMaterialType('event'):'';
       const stageSelections=await resolveSocialCardStageSkills({workspaceRoot:root,entryPoint,contentType:routingContentType,recommendedSkillId,requested:input.stageSkills&&typeof input.stageSkills==='object'?input.stageSkills:{}});
       const storyboardSelection=stageSelections.storyboard;harness=createRequestHarnessGateway({gateway:models,store,entryPoint:`social-card-page-regeneration-${contentType}`,skillId:storyboardSelection.selectedSkill||'social-card-page-regeneration',provider:input.provider||models?.config?.defaultProvider,batchId:candidate.batch_id,candidateId:candidate.id,stageId:'social-card-page-regeneration'});const harnessGateway=harness.gateway;const socialSkill=loadSkillBundle({workspaceRoot:root,skillName:storyboardSelection.selectedSkill});
       if(socialSkill.fallback)throw new Error('项目图文生成技能缺失');
@@ -314,7 +314,7 @@ export async function handleSocialCardRoutes(context) {
       const entryPoint=SOCIAL_CARD_ENTRY_POINTS[contentType];
       const routingContentType=contentType==='custom'?String(facts?.data?.content_type||''):contentType;
       const requestedStages=input.stageSkills&&typeof input.stageSkills==='object'?input.stageSkills:{};
-      const recommendedSkillId=contentType==='event'?socialStoryboardSkillForContentClass(candidate.content_class):'';
+      const recommendedSkillId=contentType==='event'?socialStoryboardSkillForMaterialType('event'):'';
       const stageSelections=await resolveSocialCardStageSkills({
         workspaceRoot:root,entryPoint,contentType:routingContentType,recommendedSkillId,requested:requestedStages,
       });
@@ -399,7 +399,7 @@ export async function handleSocialCardRoutes(context) {
   if (repositoryInspectMatch && request.method === 'POST') {
     const candidate=store.getCandidate(Number(repositoryInspectMatch[1]));
     if(!candidate)return json(response,404,{error:'候选不存在'});
-    if(eventBackedContentType(socialContentType(candidate)))return json(response,409,{error:'事件、开源技术和开源趋势图文使用分类事实基座，不执行仓库核验'});
+    if(eventBackedContentType(socialContentType(candidate)))return json(response,409,{error:'事件图文使用事件事实基座，不执行仓库核验'});
     if(socialContentType(candidate)==='custom')return json(response,409,{error:'自定义图文使用自定义事实基座，不执行仓库核验'});
     const sourceUrl=candidateRepositoryUrl(candidate); if(!sourceUrl)return json(response,409,{error:'该候选没有可核验的 GitHub 仓库地址'});
     try {

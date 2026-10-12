@@ -21,7 +21,6 @@ const CONTENT_TYPE_LIMITS = Object.freeze({
 });
 
 function normalizeContentType(contentType) {
-  if (contentType === 'technology' || contentType === 'trend') return 'event';
   return CONTENT_ENTRY_POINTS[contentType] ? contentType : 'repository';
 }
 
@@ -78,8 +77,6 @@ export function toLegacySocialCardPromptInput(envelope) {
 export const BUILTIN_SOCIAL_CARD_STORYBOARD_SKILLS=Object.freeze({
   repository:'repository-card-storyboard',
   event:'event-card-storyboard',
-  technology:'open-source-technology-storyboard',
-  trend:'open-source-trend-storyboard',
   custom:'custom-card-storyboard',
 });
 

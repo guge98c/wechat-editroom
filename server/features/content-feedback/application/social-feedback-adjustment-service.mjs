@@ -8,11 +8,10 @@ import { applySkillEdits } from '../domain/skill-editing.mjs';
 
 export const SOCIAL_COPY_SKILL_ID = 'xiaohongshu-article-generator';
 const STORYBOARD_SKILLS = new Set([
-  'repository-card-storyboard', 'event-card-storyboard', 'open-source-technology-storyboard',
-  'open-source-trend-storyboard', 'custom-card-storyboard',
+  'repository-card-storyboard', 'event-card-storyboard', 'custom-card-storyboard',
 ]);
 const STORYBOARD_RULE_FILES = ['SKILL.md', 'references/storyboard.md'];
-const COPY_RULE_FILES = ['SKILL.md', 'TITLE_GUIDE.md', 'COPY_GUIDE.md', 'references/copy-tool.md', 'references/copy-technology.md', 'references/copy-trend.md', 'references/copy-event.md', 'references/copy-custom.md'];
+const COPY_RULE_FILES = ['SKILL.md', 'TITLE_GUIDE.md', 'COPY_GUIDE.md', 'references/copy-tool.md', 'references/copy-event.md', 'references/copy-custom.md'];
 
 function clean(value, max = 1200) { return String(value || '').trim().slice(0, max); }
 function hash(value) { return crypto.createHash('sha256').update(String(value), 'utf8').digest('hex'); }

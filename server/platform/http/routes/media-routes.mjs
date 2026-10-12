@@ -305,7 +305,7 @@ export async function handleMediaRoutes(context) {
       preferences:store.visualDecisionStats(),
       maxOutputTokens:Math.min(5000, providerConfig.maxOutputTokens), workspaceRoot:config.workspaceRoot, visualPolicy: visualDecision.policy,
     }); harness.finish('completed'); } catch (error) { harness.finish('failed',error.message); throw error; }
-    const theme = defaultTypesetTheme(daily ? { category:'📰 综合资讯' } : candidate);
+    const theme = defaultTypesetTheme(daily ? { daily:true } : candidate);
     return json(response, 200, { ...result, writingStance: stanceDecision.stance, visualPolicy: visualDecision.policy, theme, themeLabel:TYPESET_THEMES[theme]?.label || theme });
   }
   if (pathname === '/api/visual-decisions' && request.method === 'POST') {

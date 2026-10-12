@@ -7,6 +7,8 @@ const arxivId = (value) => String(value || '').match(/(?:abs\/|pdf\/)?((?:\d{4}\
 const normalizeTitle = (value) => text(value).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const dateMs = (value) => { const parsed = Date.parse(value || ''); return Number.isFinite(parsed) ? parsed : 0; };
 const errorDetail = (error) => error?.cause?.code ? `${error.message} (${error.cause.code})` : error?.message || String(error);
+const localDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const localDateAtOffset = (date, offset) => new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset);
 
 async function get(fetchImpl, url, extraHeaders = {}) {
   const response = await fetchImpl(url, { headers: { accept: 'application/json, application/atom+xml, application/rss+xml, application/xml', 'user-agent': USER_AGENT, ...extraHeaders }, signal: AbortSignal.timeout(25000) });
@@ -36,10 +38,29 @@ async function collectHuggingFace(fetchImpl, windowDays, limit) {
   const all = [];
   let fetchedCount = 0;
   const today = new Date();
-  for (let offset = 0; offset < windowDays; offset += 1) {
-    const date = new Date(today.getTime() - offset * 86400000).toISOString().slice(0, 10);
+  let offset = 0;
+  let latestAllowedDate = '9999-12-31';
+  let successfulDays = 0;
+  // HF validates calendar dates against its UTC clock. During the first hours
+  // of a local day, today's local date can still be ahead of that UTC date.
+  // Skip only that unavailable day and continue filling the requested window.
+  while (successfulDays < windowDays && offset < windowDays + 3) {
+    const date = localDateKey(localDateAtOffset(today, offset));
+    offset += 1;
+    if (date > latestAllowedDate) continue;
     const query = new URLSearchParams({ date, p: '0', limit: String(limit), sort: 'trending' });
-    const payload = await (await get(fetchImpl, `${HF_DAILY}?${query}`)).json();
+    let payload;
+    try {
+      payload = await (await get(fetchImpl, `${HF_DAILY}?${query}`)).json();
+    } catch (error) {
+      const allowedDate = error.message.match(/date.{0,12}?must be less than or equal to [^\d]*(\d{4}-\d{2}-\d{2})/i)?.[1];
+      if (allowedDate && date > allowedDate) {
+        latestAllowedDate = allowedDate;
+        continue;
+      }
+      throw error;
+    }
+    successfulDays += 1;
     const rows = Array.isArray(payload) ? payload : payload?.papers || payload?.items || [];
     fetchedCount += rows.length;
     for (const row of rows) {
@@ -56,7 +77,8 @@ async function collectHuggingFace(fetchImpl, windowDays, limit) {
 }
 
 async function collectArxiv(fetchImpl, windowDays, categories, limit) {
-  const now = new Date(), start = new Date(now.getTime() - windowDays * 86400000);
+  const now = new Date();
+  const start = localDateAtOffset(now, windowDays);
   const stamp = (date) => date.toISOString().replace(/[-:T.Z]/g, '').slice(0, 12);
   const categoryQuery = categories.map((category) => `cat:${category}`).join(' OR ');
   const search = `(${categoryQuery}) AND submittedDate:[${stamp(start)} TO ${stamp(now)}]`;

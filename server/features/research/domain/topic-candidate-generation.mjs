@@ -1,4 +1,5 @@
 import { dimensionPartsOf } from './hotspot-dimensions.mjs';
+import { EDITORIAL_CATEGORIES, isRepositoryEvent, normalizeEditorialCategory } from './editorial-categories.mjs';
 
 const RELATION_LABELS = Object.freeze({
   same_subject_sequence: '同一主体连续动作',
@@ -145,31 +146,31 @@ function candidateContext({ events, scope, signals, relations, materials = [], t
 function candidateFromEvents({ events, type, relation = null, ranking, scope, signals, relations, materials = [], relationIds = [], order, focus = null }) {
   const rankItems = events.map((event) => ranking.get(idOf(event))).filter(Boolean);
   const lead = [...rankItems].sort((a, b) => finite(a.eventHeatRank, 999999) - finite(b.eventHeatRank, 999999))[0] || {};
-  const classCounts = new Map();
-  const classBoardRanks = new Map();
+  const categoryCounts = new Map();
+  const categoryBoardRanks = new Map();
   for (const event of events) {
     const id = idOf(event);
     const item = ranking.get(id) || {};
     const scopeItem = scope.get(id) || {};
-    const classification = event.card?.classification || event.classification || {};
-    const contentClass = String(scopeItem.content_class || item.contentClass || item.content_class
-      || classification.content_class || classification.contentClass || 'news_event');
-    classCounts.set(contentClass, (classCounts.get(contentClass) || 0) + 1);
+    const editorialCategory = normalizeEditorialCategory(scopeItem.editorial_category || item.editorialCategory || item.category || event.topic_category, {
+      repository: isRepositoryEvent(event),
+    });
+    categoryCounts.set(editorialCategory, (categoryCounts.get(editorialCategory) || 0) + 1);
     const boardRank = finite(scopeItem.board_rank);
-    if (boardRank != null) classBoardRanks.set(contentClass, Math.min(classBoardRanks.get(contentClass) ?? Infinity, boardRank));
+    if (boardRank != null) categoryBoardRanks.set(editorialCategory, Math.min(categoryBoardRanks.get(editorialCategory) ?? Infinity, boardRank));
   }
-  const selectionContentClass = [...classCounts.keys()].sort((a, b) => (classCounts.get(b) - classCounts.get(a))
-    || ((classBoardRanks.get(a) ?? Infinity) - (classBoardRanks.get(b) ?? Infinity))
-    || a.localeCompare(b))[0] || 'news_event';
-  const selectionBoardRank = classBoardRanks.get(selectionContentClass) ?? null;
-  const classEventValue = Math.max(...events.filter((event) => {
+  const selectionCategory = [...categoryCounts.keys()].sort((a, b) => (categoryCounts.get(b) - categoryCounts.get(a))
+    || ((categoryBoardRanks.get(a) ?? Infinity) - (categoryBoardRanks.get(b) ?? Infinity))
+    || a.localeCompare(b))[0] || '';
+  const selectionBoardRank = categoryBoardRanks.get(selectionCategory) ?? null;
+  const categoryEventValue = Math.max(...events.filter((event) => {
     const id = idOf(event);
     const item = ranking.get(id) || {};
     const scopeItem = scope.get(id) || {};
-    const classification = event.card?.classification || event.classification || {};
-    const contentClass = String(scopeItem.content_class || item.contentClass || item.content_class
-      || classification.content_class || classification.contentClass || 'news_event');
-    return contentClass === selectionContentClass;
+    const editorialCategory = normalizeEditorialCategory(scopeItem.editorial_category || item.editorialCategory || item.category || event.topic_category, {
+      repository: isRepositoryEvent(event),
+    });
+    return editorialCategory === selectionCategory;
   }).map((event) => {
     const item = ranking.get(idOf(event)) || {};
     return finite(item.eventValue ?? item.t ?? item.eventHeatScore ?? event.eventValue ?? event.t, 0);
@@ -178,14 +179,13 @@ function candidateFromEvents({ events, type, relation = null, ranking, scope, si
   const signalBonus = Math.min(10, sourceSignals.length * 2 + (sourceSignals.some((item) => item.kind === 'interest_conflict') ? 4 : 0));
   const relationBonus = relation ? Math.min(15, 6 + (relation.relation_kind === 'response' ? 5 : relation.relation_kind === 'trend' || relation.relation_kind === 'counterexample' ? 4 : 2) + (relation.confidence === 'high' ? 3 : 0)) : 0;
   const combinedEventValue = Math.max(...rankItems.map((item) => finite(item.eventValue ?? item.t ?? item.eventHeatScore, 0)), 0);
-  const eventValue = classEventValue;
+  const eventValue = categoryEventValue;
   // 排序热度只读取候选主类别内的 T，避免跨类别事件的原始 T 互相挤占名额。
-  const topicPreselectionScore = Number((classEventValue + relationBonus + signalBonus).toFixed(1));
+  const topicPreselectionScore = Number((categoryEventValue + relationBonus + signalBonus).toFixed(1));
   const context = candidateContext({ events, scope, signals, relations, materials, type, relationIds, focus });
   const seed = context.topic_candidate;
   const articleList = allArticles(events);
   const primary = events[0] || {};
-  const classification = primary.card?.classification || primary.classification || {};
   const labels = labelsFor(events);
   const category = rankItems.map((item) => item.category).find(Boolean) || primary.topic_category || '';
   return {
@@ -201,18 +201,13 @@ function candidateFromEvents({ events, type, relation = null, ranking, scope, si
     keywords: [...new Set(events.flatMap((event) => list(event.keywords)))].slice(0, 12), articles: articleList, repositoryMeta: null,
     blackHorseSignals: sourceSignals.slice(0, 6), topicHeatBonus: 0, finalPreScore: finite(lead.finalPreScore, 0),
     topicPreselectionScore, legacyPreselectionScore: finite(lead.finalPreScore, 0), poolRole: '', dimension: 'event', topicValue: eventValue, topicValueParts: null,
-    selectionContentClass, selectionBoardRank, selectionEventValue: classEventValue,
+    selectionCategory, selectionBoardRank, selectionEventValue: categoryEventValue,
     eventValue, combinedEventValue, t: eventValue, eventHeatScore: Math.max(...rankItems.map((item) => finite(item.eventHeatScore, 0)), 0),
     eventHeatRank: Math.min(...rankItems.map((item) => finite(item.eventHeatRank, 999999)), 999999),
     eventHeatState: lead.eventHeatState || primary.eventHeatState || null, eventHistoryRepeatDays: finite(lead.eventHistoryRepeatDays, 0),
-    contentClass: classification.content_class || classification.contentClass || lead.contentClass || 'news_event',
-    classificationStatus: classification.status || classification.classification_status || lead.classificationStatus || 'needs_review',
-    classificationConfidence: classification.confidence ?? lead.classificationConfidence ?? null,
-    classificationReason: classification.reason || lead.classificationReason || '',
-    classificationEvidence: classification.evidence || lead.classificationEvidence || [],
-    classificationFeatures: classification.features || lead.classificationFeatures || {},
-    articleEligible: classification.articleEligible ?? classification.article_eligible ?? lead.articleEligible ?? true,
-    articleEligibilityReason: lead.articleEligibilityReason || '',
+    editorialCategory: selectionCategory,
+    articleEligible: !isRepositoryEvent(primary),
+    articleEligibilityReason: isRepositoryEvent(primary) ? '纯 GitHub 项目默认只进入项目图文池' : '',
     confirmedFactCount: events.reduce((sum, event) => sum + list(event.card?.confirmed_facts).length, 0),
     timelineCount: events.reduce((sum, event) => sum + list(event.card?.timeline).length, 0),
     disagreementCount: events.reduce((sum, event) => sum + list(event.card?.disagreements).length, 0),
@@ -288,32 +283,32 @@ function sortCandidates(left, right) {
     || finite(left.selectionBoardRank, 999999) - finite(right.selectionBoardRank, 999999)
     || left.candidate_id.localeCompare(right.candidate_id);
 }
-const DEFAULT_CONTENT_CLASS_ORDER = Object.freeze(['news_event', 'open_source_technology', 'open_source_trend', 'github_project']);
+const DEFAULT_EDITORIAL_CATEGORY_ORDER = EDITORIAL_CATEGORIES;
 
-function classOfCandidate(candidate) {
-  return String(candidate?.selectionContentClass || candidate?.contentClass || candidate?.content_class || 'news_event');
+function categoryOfCandidate(candidate) {
+  return normalizeEditorialCategory(candidate?.selectionCategory || candidate?.editorialCategory || candidate?.editorial_category);
 }
 
-function classOrderForCandidates(candidates) {
-  const present = new Set(candidates.map(classOfCandidate));
-  return [...DEFAULT_CONTENT_CLASS_ORDER.filter((contentClass) => present.has(contentClass)),
-    ...[...present].filter((contentClass) => !DEFAULT_CONTENT_CLASS_ORDER.includes(contentClass)).sort()];
+function categoryOrderForCandidates(candidates) {
+  const present = new Set(candidates.map(categoryOfCandidate));
+  return [...DEFAULT_EDITORIAL_CATEGORY_ORDER.filter((editorialCategory) => present.has(editorialCategory)),
+    ...[...present].filter((editorialCategory) => !DEFAULT_EDITORIAL_CATEGORY_ORDER.includes(editorialCategory)).sort()];
 }
 
-function sortCandidatesWithinClasses(candidates) {
+function sortCandidatesWithinCategories(candidates) {
   const groups = new Map();
   for (const candidate of candidates) {
-    const contentClass = classOfCandidate(candidate);
-    if (!groups.has(contentClass)) groups.set(contentClass, []);
-    groups.get(contentClass).push(candidate);
+    const editorialCategory = categoryOfCandidate(candidate);
+    if (!groups.has(editorialCategory)) groups.set(editorialCategory, []);
+    groups.get(editorialCategory).push(candidate);
   }
   const ranked = [];
-  for (const contentClass of classOrderForCandidates(candidates)) {
-    const items = groups.get(contentClass).sort(sortCandidates);
+  for (const editorialCategory of categoryOrderForCandidates(candidates)) {
+    const items = groups.get(editorialCategory).sort(sortCandidates);
     items.forEach((candidate, index) => ranked.push({
       ...candidate,
-      selectionContentClass: contentClass,
-      class_rank: index + 1,
+      selectionCategory: editorialCategory,
+      category_rank: index + 1,
       generated_rank: ranked.length + 1,
     }));
   }
@@ -336,7 +331,7 @@ export function buildTopicCandidates({ events = [], discussionResearch = {}, ran
       - finite(byScope.get(idOf(b))?.selection_rank ?? byScope.get(idOf(b))?.rank, 999999) || idOf(a).localeCompare(idOf(b)));
   const modelTopics = discussionResearch.research_source === 'model' ? list(discussionResearch.topic_candidates) : [];
   if (discussionResearch.research_source === 'model') {
-    return sortCandidatesWithinClasses(modelTopics.map((topic, index) => candidateFromModelTopic({ topic, events: scopedEvents, ranking: byRanking, scope: byScope, signals: bySignals, relations: byRelation, materials, order: index }))
+    return sortCandidatesWithinCategories(modelTopics.map((topic, index) => candidateFromModelTopic({ topic, events: scopedEvents, ranking: byRanking, scope: byScope, signals: bySignals, relations: byRelation, materials, order: index }))
       .filter(Boolean));
   }
   const candidates = [];
@@ -355,44 +350,42 @@ export function buildTopicCandidates({ events = [], discussionResearch = {}, ran
     const groupEvents = ids.map((id) => byEvent.get(id)).filter(Boolean);
     candidates.push(candidateFromEvents({ events: groupEvents, type: 'multi_event_chain', relation: groupRelations.find((item) => item.relation_kind === 'trend') || groupRelations[0] || null, ranking: byRanking, scope: byScope, signals: bySignals, relations: byRelation, materials, relationIds: groupRelations.map((item) => String(item.relation_id)), order: candidates.length }));
   }
-  return sortCandidatesWithinClasses(candidates);
+  return sortCandidatesWithinCategories(candidates);
 }
-function allocateClassLimits(limit, classOrder, classCounts = {}) {
-  const weights = classOrder.map((contentClass) => Math.max(0, Number(classCounts[contentClass]) || 0));
+function allocateCategoryLimits(limit, categoryOrder, categoryCounts = {}) {
+  const weights = categoryOrder.map((category) => Math.max(0, Number(categoryCounts[category]) || 0));
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  if (!classOrder.length || !limit) return new Map(classOrder.map((contentClass) => [contentClass, 0]));
-  if (!totalWeight) return new Map(classOrder.map((contentClass, index) => [contentClass, Math.floor(limit / classOrder.length) + (index < limit % classOrder.length ? 1 : 0)]));
-  const raw = classOrder.map((contentClass, index) => ({
-    contentClass, index, exact: limit * weights[index] / totalWeight,
-  }));
-  const allocation = new Map(raw.map(({ contentClass, exact }) => [contentClass, Math.floor(exact)]));
+  if (!categoryOrder.length || !limit) return new Map(categoryOrder.map((category) => [category, 0]));
+  if (!totalWeight) return new Map(categoryOrder.map((category, index) => [category, Math.floor(limit / categoryOrder.length) + (index < limit % categoryOrder.length ? 1 : 0)]));
+  const raw = categoryOrder.map((category, index) => ({ category, index, exact: limit * weights[index] / totalWeight }));
+  const allocation = new Map(raw.map(({ category, exact }) => [category, Math.floor(exact)]));
   let remaining = limit - [...allocation.values()].reduce((sum, value) => sum + value, 0);
   for (const item of raw.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)) || a.index - b.index)) {
     if (!remaining) break;
-    allocation.set(item.contentClass, allocation.get(item.contentClass) + 1);
+    allocation.set(item.category, allocation.get(item.category) + 1);
     remaining -= 1;
   }
   return allocation;
 }
 
-export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLimit = 2, backupLimit = 3, contentClassCounts = {}, contentClassOrder = [] } = {}) {
+export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLimit = 2, backupLimit = 3, categoryCounts = {}, categoryOrder = [] } = {}) {
   const selected = [];
   const groups = new Map();
   for (const candidate of candidates) {
-    const contentClass = classOfCandidate(candidate);
-    if (!groups.has(contentClass)) groups.set(contentClass, []);
-    groups.get(contentClass).push(candidate);
+    const category = categoryOfCandidate(candidate);
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(candidate);
   }
-  const presentClassOrder = classOrderForCandidates(candidates);
-  // Keep requested classes even when a class has no candidates. Its quota must remain visible
+  const presentCategoryOrder = categoryOrderForCandidates(candidates);
+  // Keep requested categories even when a category has no candidates. Its quota must remain visible
   // instead of silently being redistributed before coverage repair has had a chance to run.
-  const requestedOrder = list(contentClassOrder).map(String).filter(Boolean);
-  const classOrder = [...new Set([...requestedOrder, ...presentClassOrder])];
-  const counts = { ...contentClassCounts };
+  const requestedOrder = list(categoryOrder).map(String).filter(Boolean);
+  const effectiveCategoryOrder = [...new Set([...requestedOrder, ...presentCategoryOrder])];
+  const counts = { ...categoryCounts };
   if (!Object.values(counts).some((value) => Number(value) > 0)) {
-    for (const contentClass of classOrder) counts[contentClass] = (groups.get(contentClass) || []).length;
+    for (const category of effectiveCategoryOrder) counts[category] = (groups.get(category) || []).length;
   }
-  for (const contentClass of classOrder) (groups.get(contentClass) || []).sort(sortCandidates);
+  for (const category of effectiveCategoryOrder) (groups.get(category) || []).sort(sortCandidates);
   const selectedIds = new Set();
   const rejectionReasons = new Map();
   const noteRejection = (candidate, role, code) => {
@@ -405,29 +398,29 @@ export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLim
     // A backup should remain available as an alternative to a core topic on the same event.
     const usedByEvent = new Map();
     const canTake = (candidate) => candidate.event_ids.every((id) => (usedByEvent.get(id) || 0) < 2);
-    const quotas = allocateClassLimits(limit, classOrder, counts);
+    const quotas = allocateCategoryLimits(limit, effectiveCategoryOrder, counts);
     let roleCount = 0;
-    for (const contentClass of classOrder) {
-      let classCount = 0;
-      for (const candidate of groups.get(contentClass) || []) {
+    for (const category of effectiveCategoryOrder) {
+      let categoryCount = 0;
+      for (const candidate of groups.get(category) || []) {
         if (roleCount >= limit) { noteRejection(candidate, role, 'role_quota_filled'); continue; }
-        if (classCount >= (quotas.get(contentClass) || 0)) { noteRejection(candidate, role, 'class_quota_filled'); continue; }
+        if (categoryCount >= (quotas.get(category) || 0)) { noteRejection(candidate, role, 'category_quota_filled'); continue; }
         if (selectedIds.has(candidate.candidate_id)) { noteRejection(candidate, role, 'already_assigned_to_higher_priority_pool'); continue; }
         if (!canTake(candidate)) { noteRejection(candidate, role, 'event_reuse_limit'); continue; }
         if (!eligible(candidate)) { noteRejection(candidate, role, 'role_eligibility_not_met'); continue; }
         destination.push({ ...candidate, poolRole: role });
         selectedIds.add(candidate.candidate_id);
         for (const id of candidate.event_ids) usedByEvent.set(id, (usedByEvent.get(id) || 0) + 1);
-        classCount += 1;
+        categoryCount += 1;
         roleCount += 1;
       }
     }
     // 若某类别候选不足或被事件复用门槛挡住，按榜单类别顺序用各自下一名补位；不比较类别分数。
     while (roleCount < limit) {
       let added = false;
-      for (const contentClass of classOrder) {
+      for (const category of effectiveCategoryOrder) {
         let candidate = null;
-        for (const item of groups.get(contentClass) || []) {
+        for (const item of groups.get(category) || []) {
           if (selectedIds.has(item.candidate_id)) { noteRejection(item, role, 'already_assigned_to_higher_priority_pool'); continue; }
           if (!canTake(item)) { noteRejection(item, role, 'event_reuse_limit'); continue; }
           if (!eligible(item)) { noteRejection(item, role, 'role_eligibility_not_met'); continue; }
@@ -453,18 +446,18 @@ export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLim
   takeRole(backupLimit, '候补3条', () => true, backup);
   const core = selected.filter((item) => item.poolRole === '核心8条');
   const black = selected.filter((item) => item.poolRole === '黑马2条');
-  const classCountsOf = (items) => items.reduce((result, item) => {
-    const contentClass = classOfCandidate(item);
-    result[contentClass] = (result[contentClass] || 0) + 1;
+  const categoryCountsOf = (items) => items.reduce((result, item) => {
+    const category = categoryOfCandidate(item);
+    result[category] = (result[category] || 0) + 1;
     return result;
   }, {});
   const requested = { core: coreLimit, black: blackLimit, backup: backupLimit };
   const actual = { core: core.length, black: black.length, backup: backup.length };
   const selectedRoleById = new Map([...selected, ...backup].map((item) => [item.candidate_id, item.poolRole]));
-  const classQuotas = {
-    core: Object.fromEntries(allocateClassLimits(coreLimit, classOrder, counts)),
-    black: Object.fromEntries(allocateClassLimits(blackLimit, classOrder, counts)),
-    backup: Object.fromEntries(allocateClassLimits(backupLimit, classOrder, counts)),
+  const categoryQuotas = {
+    core: Object.fromEntries(allocateCategoryLimits(coreLimit, effectiveCategoryOrder, counts)),
+    black: Object.fromEntries(allocateCategoryLimits(blackLimit, effectiveCategoryOrder, counts)),
+    backup: Object.fromEntries(allocateCategoryLimits(backupLimit, effectiveCategoryOrder, counts)),
   };
   return {
     selected, core, black, backup, all: candidates,
@@ -475,8 +468,8 @@ export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLim
       requested,
       actual,
       unfilled: Object.fromEntries(Object.keys(requested).map((key) => [key, Math.max(0, requested[key] - actual[key])])),
-      class_quotas: classQuotas,
-      class_actual: { core: classCountsOf(core), black: classCountsOf(black), backup: classCountsOf(backup) },
+      category_quotas: categoryQuotas,
+      category_actual: { core: categoryCountsOf(core), black: categoryCountsOf(black), backup: categoryCountsOf(backup) },
     },
   };
 }
@@ -488,7 +481,7 @@ export function topicCandidatesMarkdown({ candidates = [], selection = {}, cover
     const relationCount = candidate.research_context?.relations?.length || 0;
     const rejectionLabels = {
       role_quota_filled: '该角色名额已满',
-      class_quota_filled: '该类别名额已满',
+      category_quota_filled: '该类别名额已满',
       already_assigned_to_higher_priority_pool: '已分配给优先级更高的候选池',
       event_reuse_limit: '关联事件的候选复用上限已达到',
       role_eligibility_not_met: '未满足该候选池的入选条件',
@@ -496,7 +489,7 @@ export function topicCandidatesMarkdown({ candidates = [], selection = {}, cover
     const rejectionText = list(candidate.selection_rejection_reasons)
       .map((item) => `${item.role}：${rejectionLabels[item.code] || item.code}`)
       .join('；');
-    return '## ' + role(candidate) + ' · ' + candidate.title + '\n\n- 所属类别：' + (candidate.selectionContentClass || candidate.contentClass || '普通事件') + '（类内第 ' + (candidate.class_rank || '—') + ' 名）\n- 候选类型：' + (candidate.topic_type || candidate.candidate_type) + '\n- 关联事件：' + candidate.event_ids.join('、') + '\n- 事件价值 T：' + candidate.eventValue + '\n- 研判依据：事件内 ' + signalCount + ' 条；事件间 ' + relationCount + ' 条' + (rejectionText ? '\n- 未入选原因：' + rejectionText : '') + '\n- 核心问题：' + candidate.topic_candidate.core_question + '\n- 切入角度：' + candidate.topic_candidate.angle + '\n- 命题种子：' + candidate.topic_candidate.thesis_seed + '\n- 事实边界：' + candidate.research_context.evidence_boundary.note;
+    return '## ' + role(candidate) + ' · ' + candidate.title + '\n\n- 所属类别：' + (candidate.selectionCategory || candidate.editorialCategory || '未分类') + '（类内第 ' + (candidate.category_rank || '—') + ' 名）\n- 候选类型：' + (candidate.topic_type || candidate.candidate_type) + '\n- 关联事件：' + candidate.event_ids.join('、') + '\n- 事件价值 T：' + candidate.eventValue + '\n- 研判依据：事件内 ' + signalCount + ' 条；事件间 ' + relationCount + ' 条' + (rejectionText ? '\n- 未入选原因：' + rejectionText : '') + '\n- 核心问题：' + candidate.topic_candidate.core_question + '\n- 切入角度：' + candidate.topic_candidate.angle + '\n- 命题种子：' + candidate.topic_candidate.thesis_seed + '\n- 事实边界：' + candidate.research_context.evidence_boundary.note;
   })].join('\n\n');
 }
 export function discussionQuestionForContext(context) {

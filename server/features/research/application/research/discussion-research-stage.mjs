@@ -311,7 +311,7 @@ function compactEvent(event, scopeItem, store, searchEvidence = [], { includeCon
     latest_time: text(event?.latest_time, 60),
     event_value: scopeItem?.event_value ?? event?.eventValue ?? event?.t ?? null,
     event_rank: scopeItem?.board_rank ?? event?.eventHeatRank ?? null,
-    event_content_class: scopeItem?.content_class || event?.classification?.content_class || event?.classification?.contentClass || null,
+    editorial_category: scopeItem?.editorial_category || scopeItem?.editorialCategory || event?.topic_category || null,
     selection_rank: scopeItem?.selection_rank ?? scopeItem?.rank ?? null,
     event_parts: dimensionPartsOf(event),
     event_card: compactCard(event?.card),
@@ -1935,9 +1935,10 @@ export async function generateDiscussionResearchTopics({ gateway, store, events 
         ...baseReport.scope,
         selected_count: repairScopeItems.length,
         items: repairScopeItems,
-        content_class_counts: repairScopeItems.reduce((counts, item) => {
-          const contentClass = String(item.content_class || 'news_event');
-          counts[contentClass] = (counts[contentClass] || 0) + 1;
+        category_counts: repairScopeItems.reduce((counts, item) => {
+          const category = String(item.editorial_category || '');
+          if (!category) return counts;
+          counts[category] = (counts[category] || 0) + 1;
           return counts;
         }, {}),
       },

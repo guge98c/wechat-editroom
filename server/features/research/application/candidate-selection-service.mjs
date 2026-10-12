@@ -70,10 +70,9 @@ export class CandidateSelectionService {
       }
       const editorial = this.repositories.editorial.getArticle(row.id);
       if (!preserveLockedRoute) {
-        this.db.prepare(`UPDATE candidates SET content_class=?, classification_status=?, classification_confidence=?, classification_reason=?, classification_evidence_json=?, classification_features_json=?, article_eligible=?, article_eligibility_reason=?, updated_at=? WHERE id=?`)
-          .run(item.contentClass || 'news_event', item.classificationStatus || 'needs_review', item.classificationConfidence ?? null,
-            item.classificationReason || '', JSON.stringify(item.classificationEvidence || []), JSON.stringify(item.classificationFeatures || {}),
-            item.articleEligible === false ? 0 : 1, item.articleEligibilityReason || '', new Date().toISOString(), row.id);
+        this.db.prepare(`UPDATE candidates SET editorial_category=?, article_eligible=?, article_eligibility_reason=?, article_route_approved=?, updated_at=? WHERE id=?`)
+          .run(item.editorialCategory || '', item.articleEligible === false ? 0 : 1,
+            item.articleEligibilityReason || '', item.articleRouteApproved ? 1 : 0, new Date().toISOString(), row.id);
       }
       if (!editorial.editor_question && item.editorQuestion) this.repositories.editorial.saveArticle(row.id,
         { ...editorial, editor_question: item.editorQuestion, next_action: 'DISCUSS', brief_status: 'DISCUSS' });
@@ -99,9 +98,8 @@ export class CandidateSelectionService {
       const currentTrack = this.db.prepare('SELECT status FROM candidate_tracks WHERE candidate_row_id=? AND track=?').get(row.id, 'social_cards');
       const preserveLockedRoute = ['locked', 'drafting', 'review', 'preview', 'published'].includes(String(currentTrack?.status || '').trim());
       if (!preserveLockedRoute) {
-        this.db.prepare(`UPDATE candidates SET content_class=?, classification_status=?, classification_confidence=?, classification_reason=?, classification_evidence_json=?, classification_features_json=?, updated_at=? WHERE id=?`)
-          .run(item.contentClass || 'news_event', item.classificationStatus || 'needs_review', item.classificationConfidence ?? null,
-            item.classificationReason || '', JSON.stringify(item.classificationEvidence || []), JSON.stringify(item.classificationFeatures || {}), new Date().toISOString(), row.id);
+        this.db.prepare(`UPDATE candidates SET editorial_category=?, updated_at=? WHERE id=?`)
+          .run(item.editorialCategory || '', new Date().toISOString(), row.id);
       }
       this.repositories.candidates.addTracks(row.id, ['social_cards'], { status: preserveLockedRoute ? currentTrack.status : 'pooled', score: item.socialScore ?? null,
         pool_role: preserveLockedRoute ? '' : (item.poolRole || 'AI 图文预选'), output_mode: preserveLockedRoute ? '' : (item.outputMode || 'wechat-tool-cards') });

@@ -578,11 +578,11 @@ export function materializeStableEvents({ shadowEvents = [], hotspots = [], heat
     return { event_id: stableEvent.event_id, stable_event_id: stableEvent.event_id, representative_title: stableEvent.title || '未命名事件',
       representativeHotspotId: Number(lead.hotspot_id) || null, market_scope: leadHotspot?.market_scope || '待标注',
       china_relevance_score: Number(heat.chinaRelevanceScore ?? leadTags.chinaRelevance ?? 0), china_relevance_reason: leadTags.relevanceReason || '', global_exception: Boolean(leadTags.globalException),
-      topic_category: leadHotspot?.category || '📰 综合资讯', keywords: [...new Set(members.flatMap((article) => article.keywords || []).concat(leadTags.keywords || []))].slice(0, 12),
+      topic_category: heat.editorialCategory || leadHotspot?.category || '政策与公共议题', keywords: [...new Set(members.flatMap((article) => article.keywords || []).concat(leadTags.keywords || []))].slice(0, 12),
       source_count: sourceSet.size, report_count: members.length, peak_source_percentile: null, latest_time: latest, cluster_confidence: members.length > 1 ? 'medium' : 'low',
       articles: members, tags, repositoryMeta, eventHeatScore: heat.heatScore ?? null, eventValue: heat.eventValue ?? heat.heatScore ?? null, t: heat.t ?? heat.eventValue ?? heat.heatScore ?? null,
       eventHeatRank: heat.rank ?? null, eventHeatState: heat.state || null, eventHistoryRepeatDays: Number(heat.repeatDays || 0), duplicatePenalty: duplicatePenaltyForHeat({ state: heat.state, repeatDays: heat.repeatDays }), card: null,
       hotspot_ids: stableEvent.hotspot_ids || [], normalized: stableEvent.normalized || {}, legacy_event_ids: stableEvent.legacy_event_ids || [],
-      classification: stableEvent.classification || null };
+    };
   });
 }

@@ -243,9 +243,10 @@ function renderProductionCandidate(candidateId) {
   const themeSelect = document.getElementById('typeset-theme');
   const autoOption = themeSelect?.querySelector('option[value="auto"]');
   if (autoOption) {
-    const suggested = candidate.category === '🏢 大厂战略' && /趣|离谱|八卦/.test(candidate.angle || '') ? '卡片吃瓜风'
+    const category = candidate.editorial_category || candidate.editorialCategory || candidate.category;
+    const suggested = ['🏢 大厂战略', '大厂与商业战略'].includes(category) && /趣|离谱|八卦/.test(candidate.angle || '') ? '卡片吃瓜风'
       : candidate.composite ? '财经印刷'
-      : { '🤖 AI/技术动态': '暗色终端', '📈 行业趋势': '财经印刷', '🏢 大厂战略': '财经印刷', '💼 职场生态': '书信手账', '📰 综合资讯': '黑白快讯' }[candidate.category] || '暖纸杂志风';
+      : { '🤖 AI/技术动态': '暗色终端', '产品与技术动态': '暗色终端', '📈 行业趋势': '财经印刷', '行业趋势与市场变化': '财经印刷', '🏢 大厂战略': '财经印刷', '大厂与商业战略': '财经印刷', '💼 职场生态': '书信手账', '职场与组织变化': '书信手账', '📰 综合资讯': '黑白快讯', '政策与公共议题': '黑白快讯' }[category] || '暖纸杂志风';
     autoOption.textContent = `自动（${suggested}）`;
   }
   const artifacts = candidateArtifacts(candidate);
@@ -286,7 +287,7 @@ async function loadProductionPreview() {
   const finalIds = new Set(documents.filter((d) => d.kind === "final").map((d) => d.candidate_row_id));
   const ready = candidates.filter((c) => finalIds.has(c.id));
   const dailyFinal=documents.find((d)=>d.kind==="daily-final"&&d.candidate_row_id==null);
-  if(dailyFinal)ready.unshift({id:"daily",candidate_id:"早报",hotspot_title:dailyFinal.title||"批次早报",category:"📰 综合资讯",daily:true});
+  if(dailyFinal)ready.unshift({id:"daily",candidate_id:"早报",hotspot_title:dailyFinal.title||"批次早报",category:"批次早报",daily:true});
   const select = document.getElementById("typeset-candidate");
   if (select) {
     select.innerHTML = ready.length

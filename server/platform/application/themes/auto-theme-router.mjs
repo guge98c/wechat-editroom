@@ -63,7 +63,7 @@ export function buildSocialThemeRoutingContext({ candidate = {}, contentType = '
     title: candidate.hotspot_title,
     contentType,
     channelMode,
-    contentSignals: [candidate.content_class, facts?.data?.language, ...(Array.isArray(facts?.data?.topics) ? facts.data.topics.slice(0, 8) : [])].filter(Boolean),
+    contentSignals: [candidate.material_type, candidate.editorial_category, facts?.data?.language, ...(Array.isArray(facts?.data?.topics) ? facts.data.topics.slice(0, 8) : [])].filter(Boolean),
   };
 }
 
