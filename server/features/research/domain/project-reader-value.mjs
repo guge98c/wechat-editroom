@@ -53,8 +53,10 @@ export function projectReaderValueInput(event, heat = {}) {
 
 export function selectProjectReaderValueCandidates({ clusters = [], eventHeatRanking = {}, topK = PROJECT_READER_VALUE_TOP_K } = {}) {
   const events = new Map(clusters.map((event) => [String(event?.event_id || event?.eventId || ''), event]));
-  const board = list(eventHeatRanking?.rankings?.repository_projects?.items).length
-    ? eventHeatRanking.rankings.repository_projects.items
+  const board = list(eventHeatRanking?.rankings?.github_project?.items).length
+    ? eventHeatRanking.rankings.github_project.items
+    : list(eventHeatRanking?.rankings?.repository_projects?.items).length
+      ? eventHeatRanking.rankings.repository_projects.items
     : list(eventHeatRanking?.items).filter((item) => item?.repositoryProject || item?.materialType === 'repository');
   return board.slice(0, resolveProjectReaderValueTopK(topK)).map((heat) => {
     const event = events.get(String(heat?.eventId || heat?.event_id || ''));
@@ -94,7 +96,8 @@ export function attachProjectReaderValues(ranking = [], results = []) {
 
 export function applyProjectReaderValuesToHeatRanking(eventHeatRanking = {}, results = []) {
   const byEvent = new Map(results.map((result) => [String(result.eventId), result]));
-  const board = list(eventHeatRanking?.rankings?.repository_projects?.items).map((item) => {
+  const key = list(eventHeatRanking?.rankings?.github_project?.items).length ? 'github_project' : 'repository_projects';
+  const board = list(eventHeatRanking?.rankings?.[key]?.items).map((item) => {
     const value = byEvent.get(String(item?.eventId || item?.event_id || ''));
     if (!value) return { ...item, projectRankScore: finite(item?.scoreValue, 0) };
     const baseProjectReaderValue = finite(value.projectReaderValue);
@@ -124,15 +127,15 @@ export function applyProjectReaderValuesToHeatRanking(eventHeatRanking = {}, res
   const rankedBoard = board.map((item, index) => {
     const previousRank = Number.isFinite(Number(previousRanks.get(String(item.eventId || item.event_id || ''))))
       ? Number(previousRanks.get(String(item.eventId || item.event_id || ''))) : null;
-    return { ...item, rank: index + 1, boardRank: index + 1, rankScope: 'repository_projects', previousRank,
+    return { ...item, rank: index + 1, boardRank: index + 1, rankScope: key, previousRank,
       rankDelta: previousRank == null ? null : previousRank - (index + 1) };
   });
   return {
     ...eventHeatRanking,
     rankings: {
       ...(eventHeatRanking.rankings || {}),
-      repository_projects: {
-        ...(eventHeatRanking.rankings?.repository_projects || {}),
+      [key]: {
+        ...(eventHeatRanking.rankings?.[key] || {}),
         materialType: 'repository',
         scoreModel: 'projectReaderValue-v1',
         scoreComparable: false,

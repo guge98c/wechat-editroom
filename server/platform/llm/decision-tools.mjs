@@ -92,6 +92,7 @@ export const DECISION_TITLE_PLAN_TOOL = decisionToolDefinition({
     required: ['selectedTitle', 'titleCandidates', 'coreKeywords'],
     properties: {
       selectedTitle: { type: 'string', minLength: 1, maxLength: 120 },
+      hotspotAnchor: { type: 'string', maxLength: 80, description: '从热点事件标题或已核验主体中提取的具体主体名或话题短语，不能用泛词代替。' },
       titleCandidates: {
         type: 'array', minItems: 1, maxItems: 12,
         items: {
@@ -130,7 +131,8 @@ export function normalizeDecisionTitlePlan(value, { fallbackTitle = '' } = {}) {
     || fallback;
   const coreKeywords = [...new Set((Array.isArray(source.coreKeywords) ? source.coreKeywords : [])
     .map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 12);
-  return { ...source, selectedTitle, titleCandidates, coreKeywords };
+  const hotspotAnchor = String(source.hotspotAnchor || '').trim().slice(0, 80);
+  return { ...source, selectedTitle, titleCandidates, coreKeywords, hotspotAnchor };
 }
 
 function pathText(path) {

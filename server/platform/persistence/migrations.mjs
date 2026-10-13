@@ -798,9 +798,23 @@ export function runDatabaseMigrations(db, migrateSchema) {
     db.exec('BEGIN IMMEDIATE');
     try {
       const candidateColumns = new Set(db.prepare('PRAGMA table_info(candidates)').all().map((column) => column.name));
-      if (!candidateColumns.has('editorial_category')) db.exec("ALTER TABLE candidates ADD COLUMN editorial_category TEXT NOT NULL DEFAULT ''");
-      if (!candidateColumns.has('article_route_approved')) db.exec('ALTER TABLE candidates ADD COLUMN article_route_approved INTEGER NOT NULL DEFAULT 0');
-      if (!candidateColumns.has('article_route_evidence_json')) db.exec("ALTER TABLE candidates ADD COLUMN article_route_evidence_json TEXT NOT NULL DEFAULT '[]'");
+      for (const [name, definition] of [
+        ['material_type', "TEXT NOT NULL DEFAULT ''"],
+        ['content_route', "TEXT NOT NULL DEFAULT 'article'"],
+        ['content_class', "TEXT NOT NULL DEFAULT 'news_event'"],
+        ['classification_status', "TEXT NOT NULL DEFAULT 'needs_review'"],
+        ['classification_confidence', 'REAL'],
+        ['classification_reason', "TEXT NOT NULL DEFAULT ''"],
+        ['classification_evidence_json', "TEXT NOT NULL DEFAULT '[]'"],
+        ['classification_features_json', "TEXT NOT NULL DEFAULT '{}'"],
+        ['article_eligible', 'INTEGER NOT NULL DEFAULT 1'],
+        ['article_eligibility_reason', "TEXT NOT NULL DEFAULT ''"],
+        ['editorial_category', "TEXT NOT NULL DEFAULT ''"],
+        ['article_route_approved', 'INTEGER NOT NULL DEFAULT 0'],
+        ['article_route_evidence_json', "TEXT NOT NULL DEFAULT '[]'"],
+      ]) {
+        if (!candidateColumns.has(name)) db.exec(`ALTER TABLE candidates ADD COLUMN ${name} ${definition}`);
+      }
       db.exec(`UPDATE candidates SET material_type='repository'
         WHERE content_class='github_project' OR hotspot_id IN (
           SELECT id FROM hotspots WHERE lower(COALESCE(source_group,''))='github' OR lower(COALESCE(url,'')) LIKE 'https://github.com/%'
@@ -824,13 +838,33 @@ export function runDatabaseMigrations(db, migrateSchema) {
       db.exec(`DELETE FROM candidate_tracks WHERE track='article' AND candidate_row_id IN
         (SELECT id FROM candidates WHERE material_type='repository' AND article_route_approved=0)`);
       for (const [table, names] of [
-        ['candidates', ['content_class','classification_status','classification_confidence','classification_reason','classification_evidence_json','classification_features_json']],
         ['event_records', ['content_class','classification_confidence','classification_reason','classification_evidence_json','classification_features_json','classification_missing_evidence_json','article_eligible','social_eligible','default_route','classification_status']],
       ]) {
         const columns = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name));
         for (const name of names) if (columns.has(name)) db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
       }
       db.prepare('INSERT INTO schema_migrations(version,applied_at) VALUES(46,?)').run(new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  // Repair databases that already recorded v46, whose migration dropped
+  // candidate classification fields still used by the current repository.
+  if (arguments.length < 2) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const candidateColumns = new Set(db.prepare('PRAGMA table_info(candidates)').all().map((column) => column.name));
+      for (const [name, definition] of [
+        ['content_class', "TEXT NOT NULL DEFAULT 'news_event'"],
+        ['classification_status', "TEXT NOT NULL DEFAULT 'needs_review'"],
+        ['classification_confidence', 'REAL'],
+        ['classification_reason', "TEXT NOT NULL DEFAULT ''"],
+        ['classification_evidence_json', "TEXT NOT NULL DEFAULT '[]'"],
+        ['classification_features_json', "TEXT NOT NULL DEFAULT '{}'"],
+        ['article_eligible', 'INTEGER NOT NULL DEFAULT 1'],
+        ['article_eligibility_reason', "TEXT NOT NULL DEFAULT ''"],
+      ]) {
+        if (!candidateColumns.has(name)) db.exec(`ALTER TABLE candidates ADD COLUMN ${name} ${definition}`);
+      }
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   }

@@ -31,7 +31,7 @@ function sendGitHubJson(response, payload, status = 200) {
 
 function articleMarkdown() {
   const paragraph = '这是一段来自固定测试模型的文章正文。它只验证采集、事实、规划、写作、审查、搜索优化和发布安全门禁能够依次完成，不代表真实项目效果，也不替代人工核验来源。';
-  return `# E2E 主链路：固定事实如何变成可核验内容\n\n${Array.from({ length: 10 }, (_, index) => `## 第 ${index + 1} 节：验证一条完整内容链路\n\n${paragraph}${paragraph}`).join('\n\n')}\n`;
+  return `# E2E 文章采集样本：固定事实如何进入最终内容\n\n${Array.from({ length: 10 }, (_, index) => `## 第 ${index + 1} 节：验证一条完整内容链路\n\n${paragraph}${paragraph}`).join('\n\n')}\n`;
 }
 
 function userContent(payload) {
@@ -124,7 +124,7 @@ function discussionJson(payload) {
   const sourceId = event.sources?.[0]?.source_id || '';
   const signal = { statement: '固定采集结果具备可追踪的下游验证价值。', question: '采集结果是否真正进入最终产物？', source_ids: sourceId ? [sourceId] : [], writing_angles: ['验证采集到产物的完整链路'], thesis_seeds: ['自动化测试应检查最终交付结果。'] };
   if (String(input.phase || '').includes('topic_generation')) return {
-    topic_candidates: [{ candidate_title: '从固定采集到最终产物：如何验证主链路没有断', event_ids: eventIds.length ? [eventIds[0]] : [eventId], core_question: '改动后如何确认采集结果仍然进入最终内容产物？', angle: '用可复现夹具验证真实业务链路', thesis_seed: '端到端测试必须沿着真实数据流检查最终交付。', research_status: 'needs_review', evidence_source_ids: sourceId ? [sourceId] : [] }],
+    topic_candidates: [{ candidate_title: '从固定采集到最终产物：如何验证主链路没有断', event_ids: eventIds.length ? [eventIds[0]] : [eventId], core_question: '改动后如何确认采集结果仍然进入最终内容产物？', angle: '用可复现夹具验证真实业务链路', thesis_seed: '端到端测试必须沿着真实数据流检查最终交付。', research_status: 'needs_review', evidence_source_ids: sourceId ? [sourceId] : [], target_reader: '维护内容流水线的开发者', click_reason: '想确认采集结果是否真的进入最终文章', title_hook: '采集到了，为什么文章候选却没出现？', reader_payoff: '可以沿这条固定链路快速定位交付断点', reader_entry_score: 16 }],
     event_coverage: eventIds.map((id) => ({ event_id: id, status: id === eventIds[0] ? 'covered' : 'uncovered', reason: id === eventIds[0] ? '' : '固定测试只选择文章事件' })),
   };
   return { items: [{ event_id: eventId, anomalies: [signal], interest_conflicts: [], divergence_directions: [signal] }], relations: [], topic_candidates: [] };
@@ -162,9 +162,15 @@ function jsonForRequest(payload) {
   };
   if (/visual-plan|图表|可视化/i.test(text)) return { summary: '固定测试不生成图表', placements: [], rejections: [] };
   if (/image-plan|配图|图片规划/i.test(text)) return { placements: [] };
+  if (/hotspotAnchorRule|title_lock|SELECTED_TITLE/.test(text)) return {
+    selectedTitle: 'E2E 文章采集样本：固定事实如何进入最终内容',
+    titleCandidates: ['E2E 文章采集样本：固定事实如何进入最终内容'],
+    hotspotAnchor: 'E2E 文章采集样本',
+    coreKeywords: [],
+  };
   if (/planning|大纲|规划/i.test(text)) return {
-    selectedTitle: 'E2E 主链路：固定事实如何变成可核验内容',
-    titleCandidates: ['E2E 主链路：固定事实如何变成可核验内容'], coreKeywords: [],
+    selectedTitle: 'E2E 文章采集样本：固定事实如何进入最终内容',
+    titleCandidates: ['E2E 文章采集样本：固定事实如何进入最终内容'], hotspotAnchor: 'E2E 文章采集样本', coreKeywords: [],
     outlineMarkdown: '## 背景\n\n## 验证步骤\n\n## 完成标准', contentRole: 'analysis',
     expectedAction: ['核对固定来源'], practicalIncrement: '固定输入、可复算输出、失败可追踪', materialsMarkdown: '固定测试资料。',
   };
@@ -173,15 +179,19 @@ function jsonForRequest(payload) {
   return {
     claims: [{ id: 'fixture-claim-1', claim: '固定资料展示了一条可核验的测试事实。', status: 'verified', sourceUrl: 'https://example.com/e2e-source', sourceTitle: 'E2E 固定来源', sourceType: 'fixture', evidence: '固定夹具正文' }],
     confirmedFacts: ['固定资料展示了一条可核验的测试事实。'], missingEvidence: [],
-    selectedTitle: 'E2E 主链路：固定事实如何变成可核验内容', titleCandidates: ['E2E 主链路：固定事实如何变成可核验内容'], coreKeywords: [],
+    selectedTitle: 'E2E 文章采集样本：固定事实如何进入最终内容', titleCandidates: ['E2E 文章采集样本：固定事实如何进入最终内容'], hotspotAnchor: 'E2E 文章采集样本', coreKeywords: [],
     outlineMarkdown: '## 背景\n\n## 验证步骤\n\n## 完成标准', contentRole: 'analysis', expectedAction: ['核对固定来源'], practicalIncrement: '固定输入、可复算输出、失败可追踪', materialsMarkdown: '固定测试资料。',
     summary: '固定测试输出', placements: [], rejections: [], operations: [], lines: ['E2E 主链路测试'],
   };
 }
 
-function toolResponse(toolName) {
-  if (/title_plan/i.test(toolName)) return { selectedTitle: 'E2E 主链路：固定事实如何变成可核验内容', titleCandidates: ['E2E 主链路：固定事实如何变成可核验内容'], coreKeywords: [] };
-  if (/research_coverage/i.test(toolName)) return { status: 'pass', pass: true, issues: [], missing: [] };
+function toolResponse(toolName, payload = {}) {
+  const requestText = JSON.stringify(payload.messages || []);
+  if (/title_plan|hotspotAnchorRule|title_lock|SELECTED_TITLE/i.test(`${toolName} ${requestText}`)) return { selectedTitle: 'E2E 文章采集样本：固定事实如何进入最终内容', titleCandidates: ['E2E 文章采集样本：固定事实如何进入最终内容'], hotspotAnchor: 'E2E 文章采集样本', coreKeywords: [] };
+  if (/research_coverage/i.test(toolName)) {
+    const pointId = JSON.stringify(payload.messages || []).match(/"point_id"\s*:\s*"([^"]+)"/)?.[1] || 'e2e-research-1';
+    return { status: 'pass', summary: '固定文章完整回应已采用的研判点。', items: [{ point_id: pointId, status: 'full', coverage: '文章说明采集结果如何进入最终产物。', explanation: '正文覆盖了固定夹具检查的完整链路。', article_excerpt: '检查任务状态和最终文件。' }], omitted_points: [], contradicted_points: [], rejected_point_leakage: [], repair_suggestions: [] };
+  }
   return { pass: true, issues: [], missing: [], status: 'pass', reason: '固定测试门禁通过' };
 }
 
@@ -280,11 +290,11 @@ export async function startFakeModel({ mode = 'normal' } = {}) {
     const message = mode === 'invalid-json' && payload.response_format
       ? { role: 'assistant', content: '{invalid fixture json' }
       : toolName
-      ? { role: 'assistant', content: null, tool_calls: [{ id: 'fixture-call-1', type: 'function', function: { name: toolName, arguments: JSON.stringify(toolResponse(toolName)) } }] }
+      ? { role: 'assistant', content: null, tool_calls: [{ id: 'fixture-call-1', type: 'function', function: { name: toolName, arguments: JSON.stringify(toolResponse(toolName, payload)) } }] }
       : { role: 'assistant', content: payload.response_format ? JSON.stringify(jsonForRequest(payload)) : /social-card|social cards|hashtag|话题标签|小红书|公众号图文文案/i.test(JSON.stringify(payload.messages || [])) ? '固定测试图文文案。\n\n#E2E测试 #固定夹具 #主链路验证 #可追踪输出 #功能回归' : articleMarkdown() };
     if (payload.stream) {
       response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' });
-      const delta = toolName ? { role: 'assistant', tool_calls: [{ index: 0, id: 'fixture-call-1', type: 'function', function: { name: toolName, arguments: JSON.stringify(toolResponse(toolName)) } }] } : { role: 'assistant', content: message.content };
+      const delta = toolName ? { role: 'assistant', tool_calls: [{ index: 0, id: 'fixture-call-1', type: 'function', function: { name: toolName, arguments: JSON.stringify(toolResponse(toolName, payload)) } }] } : { role: 'assistant', content: message.content };
       response.write(`data: ${JSON.stringify({ id: 'fixture-stream', choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
       response.write(`data: ${JSON.stringify({ id: 'fixture-stream', choices: [{ index: 0, delta: {}, finish_reason: toolName ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`);
       response.end('data: [DONE]\n\n');

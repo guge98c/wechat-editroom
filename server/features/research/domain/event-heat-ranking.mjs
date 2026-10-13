@@ -225,6 +225,36 @@ export function scoreEditorialEvent({ event, currentMemberships = [], historical
   };
 }
 
+/** Apply the scoring model named by a deterministic content classification. */
+export function scoreClassifiedEvent(input = {}) {
+  const event = input.event || {};
+  const classification = event.classification || event.classification_snapshot || {};
+  const contentClass = String(classification.content_class || classification.contentClass || event.content_class || 'news_event');
+  const base = scoreEditorialEvent(input);
+  const features = classification.features || classification.classification_features || {};
+  let scoreValue = base.scoreValue;
+  if (contentClass === 'open_source_technology') {
+    scoreValue = Math.max(0, Math.min(100, scoreValue + Math.min(8, Number(features.hasTechnicalDocs) * 2 + Number(features.hasPaper) * 2 + Number(features.hasBenchmark) * 2 + Number(features.hasAdoptionSignal) * 2)));
+  } else if (contentClass === 'github_project') {
+    const repository = event.repositoryMeta || event.repository_meta || {};
+    const stars = metricCount(repository.stars ?? event.stars) || 0;
+    scoreValue = Math.max(0, Math.min(100, scoreValue * 0.65 + Math.min(25, Math.log10(stars + 1) * 8)));
+  } else if (contentClass === 'open_source_trend') {
+    scoreValue = Math.max(0, Math.min(100, scoreValue + Math.min(10, Number(features.independentSourceCount || 0) * 2 + Number(features.subjectCount || 0) * 2)));
+  }
+  const result = Number(scoreValue.toFixed(1));
+  return {
+    ...base,
+    contentClass,
+    scoreModel: contentClass === 'news_event' ? 'T_account' : contentClass,
+    scoreValue: result,
+    heatScore: result,
+    eventValue: result,
+    t: result,
+    scoreParts: { ...base.scoreParts, classificationAdjustment: Number((result - base.scoreValue).toFixed(1)), scoreValue: result },
+  };
+}
+
 /**
  * Build a deterministic event-level ranking. The model/resolver supplies event
  * identity; news events use the persisted account-aware semantic scores, with
@@ -365,7 +395,8 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
   const items = [...currentByEvent.entries()].map(([eventId, memberships]) => {
     const record = records.get(eventId) || { id: eventId, title: memberships[0]?.title || eventId, event_state: 'continuing' };
     const input = eventInputs.get(eventId) || record;
-    const scored = scoreEditorialEvent({ event: { ...record, ...input, id: eventId }, currentMemberships: memberships, historicalMemberships: historyByEvent.get(eventId) || memberships, hotspotsById, asOf });
+    const mergedEvent = { ...record, ...input, id: eventId };
+    const scored = scoreClassifiedEvent({ event: mergedEvent, currentMemberships: memberships, historicalMemberships: historyByEvent.get(eventId) || memberships, hotspotsById, asOf });
     return input?.mergedEventIds?.length > 1 ? { ...scored, mergedEventIds: input.mergedEventIds } : scored;
   }).sort((left, right) => right.scoreValue - left.scoreValue
     || right.incrementScore - left.incrementScore
@@ -379,7 +410,7 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
     const priorRank = Number.isFinite(Number(prior?.rank)) ? Number(prior.rank) : null;
     return { ...item, rank: index + 1, previousRank: priorRank, rankDelta: priorRank == null ? null : priorRank - (index + 1) };
   });
-  const rankings = Object.fromEntries(EDITORIAL_CATEGORIES.map((editorialCategory) => {
+  const categoryRankings = Object.fromEntries(EDITORIAL_CATEGORIES.map((editorialCategory) => {
     const board = ranked.filter((item) => !item.repositoryProject && item.editorialCategory === editorialCategory).map((item, index) => {
       const prior = previous.get(item.eventId);
       const priorRank = prior?.editorialCategory === editorialCategory && Number.isFinite(Number(prior.rank)) ? Number(prior.rank) : null;
@@ -390,7 +421,11 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
   const repositoryProjects = ranked.filter((item) => item.repositoryProject).map((item, index) => ({
     ...item, rank: index + 1, boardRank: index + 1, rankScope: 'repository_projects',
   }));
-  rankings.repository_projects = { materialType: 'repository', scoreModel: 'T_account', scoreComparable: false, totalEvents: repositoryProjects.length, items: repositoryProjects };
+  categoryRankings.repository_projects = { materialType: 'repository', scoreModel: 'T_account', scoreComparable: false, totalEvents: repositoryProjects.length, items: repositoryProjects };
+  const rankings = Object.fromEntries(['news_event', 'open_source_technology', 'open_source_trend', 'github_project'].map((contentClass) => {
+    const classItems = ranked.filter((item) => item.contentClass === contentClass || (!item.contentClass && contentClass === 'news_event'));
+    return [contentClass, { contentClass, scoreModel: contentClass === 'news_event' ? 'T_account' : contentClass, scoreComparable: false, totalEvents: classItems.length, items: classItems.map((item, index) => ({ ...item, classRank: index + 1 })) }];
+  }));
   return {
     schemaVersion: 2,
     titleVersion: 2,
@@ -402,6 +437,7 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
     totalEvents: ranked.length,
     excludedAccountIrrelevantCount: excludedIrrelevant.length,
     rankings,
+    categoryRankings,
     items: ranked,
   };
 }

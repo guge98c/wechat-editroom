@@ -725,6 +725,53 @@ export function normalizeRepositoryStoryboardPages({ pages = [], capacityProfile
   return { pages: output, operations, changed: operations.length > 0 };
 }
 
+function normalizeClassifiedStoryboardPages({ pages = [], role = 'risk', title = '', operations: operationNames = [] } = {}) {
+  const output = (Array.isArray(pages) ? pages : []).map(clone);
+  const bodyIndexes = output.map((page, index) => page?.kind === 'cover' || page?.role === 'cover' || page?.kind === 'ending' || page?.role === 'ending' ? -1 : index).filter((index) => index >= 0);
+  if (bodyIndexes.length < 2) return { pages: output, operations: [], changed: false };
+  const body = bodyIndexes.map((index) => output[index]);
+  const contentBlocks = [];
+  for (const block of body.flatMap((page) => Array.isArray(page?.content_blocks) ? page.content_blocks : [])) {
+    const previous = contentBlocks.at(-1);
+    if (previous && previous.type === block?.type && ['list', 'steps', 'timeline', 'stats'].includes(String(block?.type || ''))
+      && Array.isArray(previous.items) && Array.isArray(block.items)) {
+      previous.items.push(...block.items);
+    } else if (previous && previous.type === 'compare' && block?.type === 'compare'
+      && Array.isArray(previous.rows) && Array.isArray(block.rows)) {
+      previous.rows.push(...block.rows);
+    } else contentBlocks.push(clone(block));
+  }
+  const merged = {
+    ...body[0],
+    role,
+    kind: role === 'compare' ? 'positions' : 'boundary',
+    title: title || body[0].title,
+    content_blocks: contentBlocks,
+    evidence: [...new Set(body.flatMap((page) => Array.isArray(page?.evidence) ? page.evidence : []).map(String))],
+  };
+  const remove = new Set(bodyIndexes);
+  const insertion = bodyIndexes[0];
+  const result = [];
+  output.forEach((page, index) => {
+    if (index === insertion) result.push(merged);
+    if (!remove.has(index)) result.push(page);
+  });
+  const operations = operationNames.map((op) => ({ op, pages: bodyIndexes.map((index) => index + 1), targetRole: role, source: 'classified-storyboard-normalizer' }));
+  return { pages: result, operations, changed: true };
+}
+
+export function normalizeOpenSourceTechnologyStoryboardPages(options = {}) {
+  return normalizeClassifiedStoryboardPages({ ...options, role: 'risk', title: '技术证据与适用边界', operations: [
+    'merge_technology_problem_mechanism', 'merge_technology_mechanism_evidence', 'merge_technology_evidence_boundary',
+  ] });
+}
+
+export function normalizeOpenSourceTrendStoryboardPages(options = {}) {
+  return normalizeClassifiedStoryboardPages({ ...options, role: 'compare', title: '趋势主体与变化证据', operations: [
+    'merge_trend_judgment_actors', 'merge_trend_actors_timeline', 'merge_trend_timeline_comparison', 'merge_trend_watch_ending',
+  ] });
+}
+
 function mergeBlockMetadata(first, second, { title = null, content = null, items = null } = {}) {
   const merged = {
     ...clone(first),

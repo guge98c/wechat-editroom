@@ -1,5 +1,5 @@
 import { dimensionPartsOf } from './hotspot-dimensions.mjs';
-import { EDITORIAL_CATEGORIES, isRepositoryEvent, normalizeEditorialCategory } from './editorial-categories.mjs';
+import { isRepositoryEvent, normalizeEditorialCategory } from './editorial-categories.mjs';
 
 const RELATION_LABELS = Object.freeze({
   same_subject_sequence: '同一主体连续动作',
@@ -180,7 +180,7 @@ function candidateFromEvents({ events, type, relation = null, ranking, scope, si
   const relationBonus = relation ? Math.min(15, 6 + (relation.relation_kind === 'response' ? 5 : relation.relation_kind === 'trend' || relation.relation_kind === 'counterexample' ? 4 : 2) + (relation.confidence === 'high' ? 3 : 0)) : 0;
   const combinedEventValue = Math.max(...rankItems.map((item) => finite(item.eventValue ?? item.t ?? item.eventHeatScore, 0)), 0);
   const eventValue = categoryEventValue;
-  // 排序热度只读取候选主类别内的 T，避免跨类别事件的原始 T 互相挤占名额。
+  // 事件 T 使用统一尺度；候选之后会跨题材比较，类别只用于展示标签。
   const topicPreselectionScore = Number((categoryEventValue + relationBonus + signalBonus).toFixed(1));
   const context = candidateContext({ events, scope, signals, relations, materials, type, relationIds, focus });
   const seed = context.topic_candidate;
@@ -278,41 +278,37 @@ function connectedComponents(eventIds, relations) {
   return groups;
 }
 function sortCandidates(left, right) {
-  return right.topicPreselectionScore - left.topicPreselectionScore
+  return (right.topicPreselectionScore + finite(right.topic_candidate?.reader_entry_score, 0) * 1.5)
+    - (left.topicPreselectionScore + finite(left.topic_candidate?.reader_entry_score, 0) * 1.5)
     || finite(right.selectionEventValue ?? right.eventValue, 0) - finite(left.selectionEventValue ?? left.eventValue, 0)
     || finite(left.selectionBoardRank, 999999) - finite(right.selectionBoardRank, 999999)
     || left.candidate_id.localeCompare(right.candidate_id);
 }
-const DEFAULT_EDITORIAL_CATEGORY_ORDER = EDITORIAL_CATEGORIES;
-
+const MIN_READER_ENTRY_SCORE = 12;
+function readerEntryComplete(candidate) {
+  const topic = candidate?.topic_candidate || {};
+  return ['target_reader', 'click_reason', 'title_hook', 'reader_payoff'].every((field) => text(topic[field]));
+}
+function readerEntryAnchorPresent(candidate) {
+  const title = text(candidate?.title).toLocaleLowerCase().replace(/[\s“”‘’'"`·、，。！？：；（）()【】\[\]{}<>《》]/g, '');
+  const anchors = text(candidate?.topic_candidate?.title_hook, 100)
+    .split(/[、，,/|和与及]/).map((value) => value.trim().toLocaleLowerCase()
+      .replace(/[\s“”‘’'"`·、，。！？：；（）()【】\[\]{}<>《》]/g, ''))
+    .filter((value) => value.length >= 2);
+  return anchors.some((anchor) => title.includes(anchor));
+}
 function categoryOfCandidate(candidate) {
   return normalizeEditorialCategory(candidate?.selectionCategory || candidate?.editorialCategory || candidate?.editorial_category);
 }
 
-function categoryOrderForCandidates(candidates) {
-  const present = new Set(candidates.map(categoryOfCandidate));
-  return [...DEFAULT_EDITORIAL_CATEGORY_ORDER.filter((editorialCategory) => present.has(editorialCategory)),
-    ...[...present].filter((editorialCategory) => !DEFAULT_EDITORIAL_CATEGORY_ORDER.includes(editorialCategory)).sort()];
-}
-
-function sortCandidatesWithinCategories(candidates) {
-  const groups = new Map();
-  for (const candidate of candidates) {
+function sortCandidatesGlobally(candidates) {
+  const categoryRanks = new Map();
+  return [...candidates].sort(sortCandidates).map((candidate, index) => {
     const editorialCategory = categoryOfCandidate(candidate);
-    if (!groups.has(editorialCategory)) groups.set(editorialCategory, []);
-    groups.get(editorialCategory).push(candidate);
-  }
-  const ranked = [];
-  for (const editorialCategory of categoryOrderForCandidates(candidates)) {
-    const items = groups.get(editorialCategory).sort(sortCandidates);
-    items.forEach((candidate, index) => ranked.push({
-      ...candidate,
-      selectionCategory: editorialCategory,
-      category_rank: index + 1,
-      generated_rank: ranked.length + 1,
-    }));
-  }
-  return ranked;
+    const categoryRank = (categoryRanks.get(editorialCategory) || 0) + 1;
+    categoryRanks.set(editorialCategory, categoryRank);
+    return { ...candidate, selectionCategory: editorialCategory, category_rank: categoryRank, generated_rank: index + 1 };
+  });
 }
 
 export function buildTopicCandidates({ events = [], discussionResearch = {}, ranking = [] } = {}) {
@@ -331,7 +327,7 @@ export function buildTopicCandidates({ events = [], discussionResearch = {}, ran
       - finite(byScope.get(idOf(b))?.selection_rank ?? byScope.get(idOf(b))?.rank, 999999) || idOf(a).localeCompare(idOf(b)));
   const modelTopics = discussionResearch.research_source === 'model' ? list(discussionResearch.topic_candidates) : [];
   if (discussionResearch.research_source === 'model') {
-    return sortCandidatesWithinCategories(modelTopics.map((topic, index) => candidateFromModelTopic({ topic, events: scopedEvents, ranking: byRanking, scope: byScope, signals: bySignals, relations: byRelation, materials, order: index }))
+    return sortCandidatesGlobally(modelTopics.map((topic, index) => candidateFromModelTopic({ topic, events: scopedEvents, ranking: byRanking, scope: byScope, signals: bySignals, relations: byRelation, materials, order: index }))
       .filter(Boolean));
   }
   const candidates = [];
@@ -350,42 +346,11 @@ export function buildTopicCandidates({ events = [], discussionResearch = {}, ran
     const groupEvents = ids.map((id) => byEvent.get(id)).filter(Boolean);
     candidates.push(candidateFromEvents({ events: groupEvents, type: 'multi_event_chain', relation: groupRelations.find((item) => item.relation_kind === 'trend') || groupRelations[0] || null, ranking: byRanking, scope: byScope, signals: bySignals, relations: byRelation, materials, relationIds: groupRelations.map((item) => String(item.relation_id)), order: candidates.length }));
   }
-  return sortCandidatesWithinCategories(candidates);
+  return sortCandidatesGlobally(candidates);
 }
-function allocateCategoryLimits(limit, categoryOrder, categoryCounts = {}) {
-  const weights = categoryOrder.map((category) => Math.max(0, Number(categoryCounts[category]) || 0));
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  if (!categoryOrder.length || !limit) return new Map(categoryOrder.map((category) => [category, 0]));
-  if (!totalWeight) return new Map(categoryOrder.map((category, index) => [category, Math.floor(limit / categoryOrder.length) + (index < limit % categoryOrder.length ? 1 : 0)]));
-  const raw = categoryOrder.map((category, index) => ({ category, index, exact: limit * weights[index] / totalWeight }));
-  const allocation = new Map(raw.map(({ category, exact }) => [category, Math.floor(exact)]));
-  let remaining = limit - [...allocation.values()].reduce((sum, value) => sum + value, 0);
-  for (const item of raw.sort((a, b) => (b.exact - Math.floor(b.exact)) - (a.exact - Math.floor(a.exact)) || a.index - b.index)) {
-    if (!remaining) break;
-    allocation.set(item.category, allocation.get(item.category) + 1);
-    remaining -= 1;
-  }
-  return allocation;
-}
-
-export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLimit = 2, backupLimit = 3, categoryCounts = {}, categoryOrder = [] } = {}) {
+export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLimit = 2, backupLimit = 3 } = {}) {
   const selected = [];
-  const groups = new Map();
-  for (const candidate of candidates) {
-    const category = categoryOfCandidate(candidate);
-    if (!groups.has(category)) groups.set(category, []);
-    groups.get(category).push(candidate);
-  }
-  const presentCategoryOrder = categoryOrderForCandidates(candidates);
-  // Keep requested categories even when a category has no candidates. Its quota must remain visible
-  // instead of silently being redistributed before coverage repair has had a chance to run.
-  const requestedOrder = list(categoryOrder).map(String).filter(Boolean);
-  const effectiveCategoryOrder = [...new Set([...requestedOrder, ...presentCategoryOrder])];
-  const counts = { ...categoryCounts };
-  if (!Object.values(counts).some((value) => Number(value) > 0)) {
-    for (const category of effectiveCategoryOrder) counts[category] = (groups.get(category) || []).length;
-  }
-  for (const category of effectiveCategoryOrder) (groups.get(category) || []).sort(sortCandidates);
+  const ranked = [...candidates].sort(sortCandidates);
   const selectedIds = new Set();
   const rejectionReasons = new Map();
   const noteRejection = (candidate, role, code) => {
@@ -398,44 +363,19 @@ export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLim
     // A backup should remain available as an alternative to a core topic on the same event.
     const usedByEvent = new Map();
     const canTake = (candidate) => candidate.event_ids.every((id) => (usedByEvent.get(id) || 0) < 2);
-    const quotas = allocateCategoryLimits(limit, effectiveCategoryOrder, counts);
     let roleCount = 0;
-    for (const category of effectiveCategoryOrder) {
-      let categoryCount = 0;
-      for (const candidate of groups.get(category) || []) {
-        if (roleCount >= limit) { noteRejection(candidate, role, 'role_quota_filled'); continue; }
-        if (categoryCount >= (quotas.get(category) || 0)) { noteRejection(candidate, role, 'category_quota_filled'); continue; }
-        if (selectedIds.has(candidate.candidate_id)) { noteRejection(candidate, role, 'already_assigned_to_higher_priority_pool'); continue; }
-        if (!canTake(candidate)) { noteRejection(candidate, role, 'event_reuse_limit'); continue; }
-        if (!eligible(candidate)) { noteRejection(candidate, role, 'role_eligibility_not_met'); continue; }
-        destination.push({ ...candidate, poolRole: role });
-        selectedIds.add(candidate.candidate_id);
-        for (const id of candidate.event_ids) usedByEvent.set(id, (usedByEvent.get(id) || 0) + 1);
-        categoryCount += 1;
-        roleCount += 1;
-      }
-    }
-    // 若某类别候选不足或被事件复用门槛挡住，按榜单类别顺序用各自下一名补位；不比较类别分数。
-    while (roleCount < limit) {
-      let added = false;
-      for (const category of effectiveCategoryOrder) {
-        let candidate = null;
-        for (const item of groups.get(category) || []) {
-          if (selectedIds.has(item.candidate_id)) { noteRejection(item, role, 'already_assigned_to_higher_priority_pool'); continue; }
-          if (!canTake(item)) { noteRejection(item, role, 'event_reuse_limit'); continue; }
-          if (!eligible(item)) { noteRejection(item, role, 'role_eligibility_not_met'); continue; }
-          candidate = item;
-          break;
-        }
-        if (!candidate) continue;
-        destination.push({ ...candidate, poolRole: role });
-        selectedIds.add(candidate.candidate_id);
-        for (const id of candidate.event_ids) usedByEvent.set(id, (usedByEvent.get(id) || 0) + 1);
-        roleCount += 1;
-        added = true;
-        if (roleCount >= limit) break;
-      }
-      if (!added) break;
+    for (const candidate of ranked) {
+      if (roleCount >= limit) { noteRejection(candidate, role, 'role_quota_filled'); continue; }
+      if (!readerEntryComplete(candidate)) { noteRejection(candidate, role, 'reader_entry_incomplete'); continue; }
+      if (!readerEntryAnchorPresent(candidate)) { noteRejection(candidate, role, 'reader_title_anchor_missing'); continue; }
+      if (finite(candidate.topic_candidate?.reader_entry_score, 0) < MIN_READER_ENTRY_SCORE) { noteRejection(candidate, role, 'reader_entry_below_threshold'); continue; }
+      if (selectedIds.has(candidate.candidate_id)) { noteRejection(candidate, role, 'already_assigned_to_higher_priority_pool'); continue; }
+      if (!canTake(candidate)) { noteRejection(candidate, role, 'event_reuse_limit'); continue; }
+      if (!eligible(candidate)) { noteRejection(candidate, role, 'role_eligibility_not_met'); continue; }
+      destination.push({ ...candidate, poolRole: role });
+      selectedIds.add(candidate.candidate_id);
+      for (const id of candidate.event_ids) usedByEvent.set(id, (usedByEvent.get(id) || 0) + 1);
+      roleCount += 1;
     }
   };
   takeRole(coreLimit, '核心8条');
@@ -454,11 +394,6 @@ export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLim
   const requested = { core: coreLimit, black: blackLimit, backup: backupLimit };
   const actual = { core: core.length, black: black.length, backup: backup.length };
   const selectedRoleById = new Map([...selected, ...backup].map((item) => [item.candidate_id, item.poolRole]));
-  const categoryQuotas = {
-    core: Object.fromEntries(allocateCategoryLimits(coreLimit, effectiveCategoryOrder, counts)),
-    black: Object.fromEntries(allocateCategoryLimits(blackLimit, effectiveCategoryOrder, counts)),
-    backup: Object.fromEntries(allocateCategoryLimits(backupLimit, effectiveCategoryOrder, counts)),
-  };
   return {
     selected, core, black, backup, all: candidates,
     unselectedReasons: Object.fromEntries(candidates
@@ -468,20 +403,23 @@ export function selectTopicCandidates(candidates = [], { coreLimit = 8, blackLim
       requested,
       actual,
       unfilled: Object.fromEntries(Object.keys(requested).map((key) => [key, Math.max(0, requested[key] - actual[key])])),
-      category_quotas: categoryQuotas,
+      selection_policy: 'global_candidate_competition',
+      minimum_reader_entry_score: MIN_READER_ENTRY_SCORE,
       category_actual: { core: categoryCountsOf(core), black: categoryCountsOf(black), backup: categoryCountsOf(backup) },
     },
   };
 }
 export function topicCandidatesMarkdown({ candidates = [], selection = {}, coverage = [] } = {}) {
   const role = (candidate) => candidate.poolRole || '未入选';
-  return ['# 阶段 3 · 讨论导向候选选题', '', '> 候选命题必须来自已确认的事件内研判信号，或模型确认的事件间前后、回应、对比、趋势、反例关系；不代表作者最终立场。候选按类别分别排序和分配名额，T 不跨类别比较。', '', '核心 ' + (selection.core?.length || 0) + ' 条；黑马 ' + (selection.black?.length || 0) + ' 条；候补 ' + (selection.backup?.length || 0) + ' 条。', '', ...(coverage.length ? ['## 事件覆盖清单', '', ...coverage.map((item) => `- ${item.status === 'covered' ? '✅ 已覆盖' : item.status === 'uncovered' ? '⚠️ 未形成候选' : '❔ 未说明'} · ${item.title || item.event_id}${item.candidate_ids?.length ? ` → ${item.candidate_ids.join('、')}` : ''}${item.reason ? `：${item.reason}` : ''}`), ''] : []), ...candidates.map((candidate) => {
+  return ['# 阶段 3 · 讨论导向候选选题', '', '> 候选命题来自事件研判信号或有证据的事件关系；题材类别仅作标签，所有候选跨类别按热度、研判信号和读者入口统一竞争。读者入口评分低于 12/20 或关键信息缺失的候选不入核心、黑马和候补池。', '', '核心 ' + (selection.core?.length || 0) + ' 条；黑马 ' + (selection.black?.length || 0) + ' 条；候补 ' + (selection.backup?.length || 0) + ' 条。', '', ...(coverage.length ? ['## 事件覆盖清单', '', ...coverage.map((item) => `- ${item.status === 'covered' ? '✅ 已覆盖' : item.status === 'uncovered' ? '⚠️ 未形成候选' : '❔ 未说明'} · ${item.title || item.event_id}${item.candidate_ids?.length ? ` → ${item.candidate_ids.join('、')}` : ''}${item.reason ? `：${item.reason}` : ''}`), ''] : []), ...candidates.map((candidate) => {
     const signals = candidate.research_context?.internal_signals || [];
     const signalCount = signals.reduce((sum, item) => sum + [item.anomalies, item.conflicts, item.divergences, item.internal_research?.anomalies, item.internal_research?.interest_conflicts, item.internal_research?.divergence_directions].reduce((n, values) => n + (Array.isArray(values) ? values.length : 0), 0), 0);
     const relationCount = candidate.research_context?.relations?.length || 0;
     const rejectionLabels = {
       role_quota_filled: '该角色名额已满',
-      category_quota_filled: '该类别名额已满',
+      reader_entry_incomplete: '目标读者、点击理由、标题入口或读者回报不完整',
+      reader_title_anchor_missing: '标题没有出现声明的热点主体或话题锚点',
+      reader_entry_below_threshold: `读者入口评分低于 ${MIN_READER_ENTRY_SCORE}/20`,
       already_assigned_to_higher_priority_pool: '已分配给优先级更高的候选池',
       event_reuse_limit: '关联事件的候选复用上限已达到',
       role_eligibility_not_met: '未满足该候选池的入选条件',
@@ -489,7 +427,8 @@ export function topicCandidatesMarkdown({ candidates = [], selection = {}, cover
     const rejectionText = list(candidate.selection_rejection_reasons)
       .map((item) => `${item.role}：${rejectionLabels[item.code] || item.code}`)
       .join('；');
-    return '## ' + role(candidate) + ' · ' + candidate.title + '\n\n- 所属类别：' + (candidate.selectionCategory || candidate.editorialCategory || '未分类') + '（类内第 ' + (candidate.category_rank || '—') + ' 名）\n- 候选类型：' + (candidate.topic_type || candidate.candidate_type) + '\n- 关联事件：' + candidate.event_ids.join('、') + '\n- 事件价值 T：' + candidate.eventValue + '\n- 研判依据：事件内 ' + signalCount + ' 条；事件间 ' + relationCount + ' 条' + (rejectionText ? '\n- 未入选原因：' + rejectionText : '') + '\n- 核心问题：' + candidate.topic_candidate.core_question + '\n- 切入角度：' + candidate.topic_candidate.angle + '\n- 命题种子：' + candidate.topic_candidate.thesis_seed + '\n- 事实边界：' + candidate.research_context.evidence_boundary.note;
+    const reader = candidate.topic_candidate || {};
+    return '## ' + role(candidate) + ' · ' + candidate.title + '\n\n- 全局候选序：' + (candidate.generated_rank || '—') + '\n- 所属题材：' + (candidate.selectionCategory || candidate.editorialCategory || '未分类') + '\n- 候选类型：' + (candidate.topic_type || candidate.candidate_type) + '\n- 关联事件：' + candidate.event_ids.join('、') + '\n- 事件价值 T：' + candidate.eventValue + '\n- 读者入口：' + (reader.reader_entry_score ?? '待评') + '/20；读者：' + (reader.target_reader || '待明确') + '；点击理由：' + (reader.click_reason || '待明确') + '\n- 标题入口：' + (reader.title_hook || '待明确') + '\n- 读者回报：' + (reader.reader_payoff || '待明确') + '\n- 研判依据：事件内 ' + signalCount + ' 条；事件间 ' + relationCount + ' 条' + (rejectionText ? '\n- 未入选原因：' + rejectionText : '') + '\n- 核心问题：' + candidate.topic_candidate.core_question + '\n- 切入角度：' + candidate.topic_candidate.angle + '\n- 命题种子：' + candidate.topic_candidate.thesis_seed + '\n- 事实边界：' + candidate.research_context.evidence_boundary.note;
   })].join('\n\n');
 }
 export function discussionQuestionForContext(context) {

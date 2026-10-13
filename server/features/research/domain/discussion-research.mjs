@@ -1,17 +1,11 @@
 import { dimensionPartsOf } from './hotspot-dimensions.mjs';
 import { EDITORIAL_CATEGORIES, isRepositoryEvent, normalizeEditorialCategory } from './editorial-categories.mjs';
 
-export const DISCUSSION_RESEARCH_SCHEMA_VERSION = 5;
-// 讨论研判按六个编辑主类的榜内名次轮询；主类榜使用同一 T 评分尺度。
-export const DISCUSSION_RESEARCH_TOP_K_OPTIONS = Object.freeze([5, 8, 10]);
-export const DISCUSSION_RESEARCH_TOP_K = 8;
+export const DISCUSSION_RESEARCH_SCHEMA_VERSION = 6;
+// 讨论研判按全局事件热度排序；类别只保留为选题标签，不参与范围配额。
+export const DISCUSSION_RESEARCH_TOP_K_OPTIONS = Object.freeze([5, 8, 10, 15]);
+export const DISCUSSION_RESEARCH_TOP_K = 15;
 export const DISCUSSION_RESEARCH_CATEGORIES = EDITORIAL_CATEGORIES;
-
-function categoryOrderForBatch(batchId) {
-  const offset = [...String(batchId || '')].reduce((sum, character) => sum + character.charCodeAt(0), 0)
-    % DISCUSSION_RESEARCH_CATEGORIES.length;
-  return [...DISCUSSION_RESEARCH_CATEGORIES.slice(offset), ...DISCUSSION_RESEARCH_CATEGORIES.slice(0, offset)];
-}
 
 export function resolveDiscussionResearchTopK(value) {
   const normalized = Number(value);
@@ -25,7 +19,7 @@ const finite = (value, fallback = null) => Number.isFinite(Number(value)) ? Numb
 function categoryOf(event, heat) {
   return normalizeEditorialCategory(heat?.editorialCategory || event?.editorial_category || event?.topic_category || event?.category, {
     repository: isRepositoryEvent(event),
-  });
+  }) || EDITORIAL_CATEGORIES[0];
 }
 
 function accountAudienceOf(event) {
@@ -337,7 +331,7 @@ export function buildDiscussionResearch({ events = [], eventHeatRanking = {}, to
   const heatByEvent = new Map(list(eventHeatRanking.items).map((item) => [String(item.eventId || item.event_id), item]));
   const boardHeatByEvent = new Map();
   for (const editorialCategory of DISCUSSION_RESEARCH_CATEGORIES) {
-    for (const item of list(eventHeatRanking.rankings?.[editorialCategory]?.items)) {
+    for (const item of list((eventHeatRanking.categoryRankings || eventHeatRanking.rankings)?.[editorialCategory]?.items)) {
       const eventId = String(item.eventId || item.event_id || '');
       if (!eventId) continue;
       boardHeatByEvent.set(eventId, {
@@ -359,40 +353,16 @@ export function buildDiscussionResearch({ events = [], eventHeatRanking = {}, to
     accountAudience === 0 || repository || !isBoardCategory(editorialCategory));
   const heatEligible = heatAvailable.filter(({ accountAudience, repository, editorialCategory }) =>
     accountAudience !== 0 && !repository && isBoardCategory(editorialCategory));
-  const byCategory = new Map(DISCUSSION_RESEARCH_CATEGORIES.map((category) => [category, []]));
-  for (const entry of heatEligible) {
-    const categoryEntries = byCategory.get(entry.editorialCategory);
-    if (categoryEntries) categoryEntries.push(entry);
-  }
-  for (const entries of byCategory.values()) entries.sort((a, b) => {
-    const rankA = finite(a.heat?.boardRank ?? a.heat?.board_rank);
-    const rankB = finite(b.heat?.boardRank ?? b.heat?.board_rank);
-    if (rankA != null && rankB != null && rankA !== rankB) return rankA - rankB;
-    if (rankA != null && rankB == null) return -1;
-    if (rankA == null && rankB != null) return 1;
-    return finite(b.heat?.scoreValue ?? b.heat?.t ?? b.heat?.eventValue ?? b.event?.t, 0)
-      - finite(a.heat?.scoreValue ?? a.heat?.t ?? a.heat?.eventValue ?? a.event?.t, 0)
-      || idOf(a.event).localeCompare(idOf(b.event));
-  });
+  const globalHeat = (entry) => finite(entry.heat?.scoreValue ?? entry.heat?.t ?? entry.heat?.eventValue ?? entry.event?.t, 0);
+  heatEligible.sort((a, b) => globalHeat(b) - globalHeat(a)
+    || finite(a.heat?.globalRank ?? a.heat?.rank, 999999) - finite(b.heat?.globalRank ?? b.heat?.rank, 999999)
+    || idOf(a.event).localeCompare(idOf(b.event)));
   const topKLimit = Math.max(0, Number(topK) || DISCUSSION_RESEARCH_TOP_K);
-  const selectionCategoryOrder = categoryOrderForBatch(batchId);
-  const selected = [];
-  let boardRank = 1;
-  while (selected.length < topKLimit) {
-    let added = false;
-    for (const editorialCategory of selectionCategoryOrder) {
-      const entry = byCategory.get(editorialCategory)[boardRank - 1];
-      if (!entry) continue;
-      selected.push({ ...entry, boardRank: finite(entry.heat?.boardRank ?? entry.heat?.board_rank, boardRank) ?? boardRank });
-      added = true;
-      if (selected.length >= topKLimit) break;
-    }
-    if (!added) break;
-    boardRank += 1;
-  }
-  const scope = selected.map(({ event, heat, editorialCategory, boardRank: localRank }, index) => eventScope(
-    event, heat, finite(heat?.globalRank ?? heat?.rank, index + 1), index + 1, localRank, editorialCategory,
-    `按${editorialCategory}榜内第 ${localRank} 名纳入均衡研判范围`,
+  const selected = heatEligible.slice(0, topKLimit);
+  const scope = selected.map(({ event, heat, editorialCategory }, index) => eventScope(
+    event, heat, finite(heat?.globalRank ?? heat?.rank, index + 1), index + 1,
+    finite(heat?.boardRank ?? heat?.board_rank), editorialCategory,
+    `按全局热度排序第 ${index + 1} 名纳入研判范围`,
   ));
   // 阶段 0 只负责冻结研判范围。不要在这里根据关键词、维度或时间
   // 直接生成反常、利益冲突、发散方向或事件关系；这些都由阶段 1 的
@@ -404,9 +374,8 @@ export function buildDiscussionResearch({ events = [], eventHeatRanking = {}, to
     mode: 'phase0_scope',
     policy: {
       top_k: topKLimit,
-      selection_policy: 'editorial_category_round_robin',
+      selection_policy: 'global_heat_rank',
       included_categories: [...DISCUSSION_RESEARCH_CATEGORIES],
-      selection_category_order: selectionCategoryOrder,
       excluded_reasons: {
         account_irrelevant: 'audience score is 0',
         repository_project: 'project discovery remains in the project/social-card lane',
@@ -444,12 +413,12 @@ export function discussionResearchMarkdown(report) {
   const lines = [
     '# 高热事件讨论研判报告',
     '',
-    `模式：${report?.mode || 'phase0_observation'}；范围：按六类编辑榜单的榜内名次均衡选取 ${report?.policy?.top_k || DISCUSSION_RESEARCH_TOP_K} 个事件；GitHub 项目素材不自动进入文章研判；本次纳入 ${scope.length} 个事件。`,
+    `模式：${report?.mode || 'phase0_observation'}；范围：按全局热度选取 ${report?.policy?.top_k || DISCUSSION_RESEARCH_TOP_K} 个事件，题材类别仅作标签；GitHub 项目素材不自动进入文章研判；本次纳入 ${scope.length} 个事件。`,
     '',
     report?.research_source === 'model'
       ? '本报告由模型按事件逐个联网研判并直接返回 Markdown；程序只负责范围裁剪、调用审计、来源整理、结构索引和去重，研判价值 J 在候选评分阶段计算。'
       : report?.mode === 'phase0_scope'
-        ? '阶段 0 只按榜内名次均衡冻结六类编辑榜单的研判范围和来源指针；尚未进行事件内或事件间语义研判，页面不会在此阶段展示程序猜出的关系。'
+        ? '阶段 0 只按全局热度冻结研判范围和来源指针；尚未进行事件内或事件间语义研判，页面不会在此阶段展示程序猜出的关系。'
         : '本报告只整理已有事件卡、事件维度和时间关系，不改变 T、F、候选池，也不把观察信号直接当作选题命题。',
     '',
     '## Top-K 研判范围',

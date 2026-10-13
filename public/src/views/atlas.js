@@ -229,8 +229,14 @@ export function socialMaterialTypeOf(item) {
   return item?.repositoryProject || item?.materialType === "repository" || item?.repositoryMeta ? "repository" : "event";
 }
 
+export function socialContentClassOf(item = {}) {
+  const value = item?.contentClass || item?.content_class || item?.classification?.contentClass || item?.classification?.content_class
+    || item?.classification_snapshot?.content_class;
+  return value || (socialMaterialTypeOf(item) === "repository" ? "github_project" : "news_event");
+}
+
 export function socialPoolPresentation(materialType, { eventSocial = false } = {}) {
-  if (materialType === "repository") return { label: "工具图文", target: "social-editor", poolRole: "工具图文" };
+  if (materialType === "repository" || materialType === "github_project") return { label: "工具图文", target: "social-editor", poolRole: "工具图文" };
   if (eventSocial || materialType === "event") return { label: "事件图文", target: "social-event", poolRole: "事件热榜图文" };
   return { label: "图文选题池", target: "social-topics", poolRole: "" };
 }
@@ -624,6 +630,7 @@ function renderAtlas() {
 async function createCompositeFromEvent(batchId, eventId, tracks = ['article']) {
   const event = state.atlas?.events?.find((item) => item.event_id === eventId);
   if (!event) return toast("没有找到该事件，请先刷新热点全景");
+  const contentClass = socialContentClassOf(event);
   const socialMaterialType = socialMaterialTypeOf(event);
   const socialPresentation = socialPoolPresentation(socialMaterialType, { eventSocial: true });
   const title = event.representative_title;
@@ -632,12 +639,12 @@ async function createCompositeFromEvent(batchId, eventId, tracks = ['article']) 
   let message;
   if (hotspotIds.length === 1) {
     await request(`/api/batches/${encodeURIComponent(batchId)}/candidates`, {
-      method: "POST", body: JSON.stringify({ hotspotIds, tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : undefined }),
+      method: "POST", body: JSON.stringify({ hotspotIds, tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined, socialContentClass: tracks.includes("social_cards") ? contentClass : undefined, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : undefined }),
     });
     message = tracks.includes("social_cards") ? `已加入${socialPresentation.label}：${event.representative_title}` : `已加入选题池：${event.representative_title}`;
   } else {
     const candidate = await request(`/api/batches/${encodeURIComponent(batchId)}/candidates/composite`, {
-      method: "POST", body: JSON.stringify({ hotspotIds, title, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : "综合选题", tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined }),
+      method: "POST", body: JSON.stringify({ hotspotIds, title, poolRole: tracks.includes("social_cards") ? socialPresentation.poolRole : "综合选题", tracks, socialMaterialType: tracks.includes("social_cards") ? socialMaterialType : undefined, socialContentClass: tracks.includes("social_cards") ? contentClass : undefined }),
     });
     message = tracks.includes("social_cards") ? `已从事件簇创建${socialPresentation.label}：${candidate.candidate_id}` : `已从事件簇创建综合选题：${candidate.candidate_id}`;
   }

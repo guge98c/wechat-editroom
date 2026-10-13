@@ -23,6 +23,23 @@ export function socialRouteForContentType(type, channel = 'wechat') {
   return socialRouteForMaterialType(type, channel);
 }
 
+export function socialRouteForContentClass(contentClass, channel = 'wechat') {
+  const type = contentClass === 'github_project' ? 'repository' : 'event';
+  const route = socialRouteForMaterialType(type, channel);
+  const technology = contentClass === 'open_source_technology';
+  const trend = contentClass === 'open_source_trend';
+  return {
+    contentClass,
+    contentType: route.contentType,
+    outputMode: route.outputMode,
+    storyboardSkill: technology ? 'open-source-technology-storyboard' : trend ? 'open-source-trend-storyboard' : route.storyboardSkill,
+    poolRole: route.poolRole,
+    label: type === 'repository' ? '工具图文' : '事件图文',
+    channel: route.channel,
+    routeVersion: 'social-route-v2',
+  };
+}
+
 export function contentTypeForSocialRoute(candidate = {}) {
   if (candidate.output_mode?.includes('custom-cards')) return 'custom';
   return isRepositoryCandidate(candidate) ? 'repository' : 'event';

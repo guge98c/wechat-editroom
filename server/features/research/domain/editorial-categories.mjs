@@ -22,6 +22,8 @@ export function normalizeEditorialCategory(value, { repository = false } = {}) {
 }
 
 export function isRepositoryEvent(event = {}) {
+  const contentClass = String(event.contentClass || event.content_class || event.classification?.contentClass || event.classification?.content_class || event.classification_snapshot?.content_class || '');
+  if (contentClass === 'github_project') return true;
   if (event.material_type === 'repository' || event.materialType === 'repository' || event.repositoryMeta || event.repository_meta) return true;
   return (Array.isArray(event.articles) ? event.articles : []).some((article) => {
     const source = String(article?.source || article?.channel || '').toLowerCase();

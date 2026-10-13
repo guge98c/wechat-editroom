@@ -685,7 +685,7 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
   clusters = resolvedEvents.filter((event) => !skippedEventIds.has(event.event_id));
   writeFile(path.join(sourcesDir,'event-clusters.json'),JSON.stringify({ generated_at:new Date().toISOString(), total_articles:researchHotspots.length,excluded_stale_count:staleCount,excluded_skipped_event_count:skippedEvents.length,total_events:clusters.length,events:clusters },null,2));
   writeFile(path.join(workdir,'hotspot-overview.html'),overviewHtml(clusters));
-  // 阶段 0 按三个非项目榜单的榜内名次均衡冻结总 Top-K；语义研判交给模型。
+  // 阶段 0 按全局热度冻结总 Top-K；语义研判交给模型，题材只作标签。
   const configuredDiscussionResearchTopK = store.getExtensionSetting?.('system', 'workbench')?.value?.discussionResearchTopK;
   const discussionResearchTopK = resolveDiscussionResearchTopK(configuredDiscussionResearchTopK);
   const stage3CheckpointPath = path.join(sourcesDir, 'discussion-research-stage3-input.json');
@@ -711,7 +711,7 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
     ...discussionResearchBase.policy,
     ...discussionResearchBase.scope,
   }, null, 2));
-  onProgress(`阶段 0 完成：按六类题材均衡冻结 ${discussionResearchBase.scope.selected_count} 个相关非项目事件（${DISCUSSION_RESEARCH_CATEGORIES.map((category) => `${category} ${discussionResearchBase.scope.category_counts?.[category] || 0}`).join('、')}），保留 ${discussionResearchBase.scope.items.reduce((sum, item) => sum + (item.source_refs?.length || 0), 0)} 个来源指针`);
+  onProgress(`阶段 0 完成：按全局热度冻结 ${discussionResearchBase.scope.selected_count} 个相关非项目事件，保留 ${discussionResearchBase.scope.items.reduce((sum, item) => sum + (item.source_refs?.length || 0), 0)} 个来源指针`);
   const discussionResearchInputPath = path.join(sourcesDir, 'discussion-research-input.json');
   const discussionResearchReportsPath = path.join(sourcesDir, 'discussion-research-reports.md');
   const researchDigestPath = path.join(sourcesDir, 'research-digest.json');
@@ -940,8 +940,8 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
   writeFile(eventRelationsPath, JSON.stringify({ generated_at: discussionResearch.generated_at, batch_id: batch.id, mode: discussionResearch.mode, items: discussionResearch.relations, reference_events: discussionResearch.reference_events || [], verified_research_materials: discussionResearch.verified_research_materials || [] }, null, 2));
   writeFile(verifiedResearchMaterialsPath, JSON.stringify({ generated_at: discussionResearch.generated_at, batch_id: batch.id, mode: discussionResearch.mode, items: discussionResearch.verified_research_materials || [] }, null, 2));
   writeFile(discussionResearchReportPath, discussionResearchMarkdown(discussionResearch));
-  onProgress(`阶段 1-3 模型讨论研判完成：均衡范围 ${discussionResearch.scope.selected_count} 个事件，形成 ${discussionResearch.verified_research_materials.length} 条研判素材和 ${discussionResearch.relations.length} 条有证据关系`);
-  onProgress('执行事件级兼容预评估，并按各类别独立排序选出核心8条 + 黑马2条');
+  onProgress(`阶段 1-3 模型讨论研判完成：全局热度范围 ${discussionResearch.scope.selected_count} 个事件，形成 ${discussionResearch.verified_research_materials.length} 条研判素材和 ${discussionResearch.relations.length} 条有证据关系`);
+  onProgress('执行事件级兼容预评估，并按全局候选竞争选出核心8条 + 黑马2条');
   const breaking=batch.batch_type==='breaking';
   if(breaking)onProgress('执行突发事件单题研判，不参与常规 8+2 竞争');
   const accountContext = getAccountContext({workspaceRoot});
@@ -950,16 +950,7 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
   let ranking = preselection(clusters, batch.batch_date, scoring, eventHeatRanking.items || []);
   if (appliedProjectFeedback) ranking = applyProjectDiscoveryFeedbackToRanking(ranking, appliedProjectFeedback);
   const topicCandidates = buildTopicCandidates({ events: clusters, discussionResearch, ranking });
-  const discussionCategoryCounts = discussionResearch.scope?.category_counts
-    || discussionResearch.scope?.items?.reduce((counts, item) => {
-      const category = String(item.editorial_category || '');
-      if (category) counts[category] = (counts[category] || 0) + 1;
-      return counts;
-    }, {}) || {};
-  const topicSelection = selectTopicCandidates(topicCandidates, {
-    coreLimit: 8, blackLimit: 2, backupLimit: 3, categoryCounts: discussionCategoryCounts,
-    categoryOrder: discussionResearch.policy?.selection_category_order || [],
-  });
+  const topicSelection = selectTopicCandidates(topicCandidates, { coreLimit: 8, blackLimit: 2, backupLimit: 3 });
   const topicRoleById = new Map([...topicSelection.core, ...topicSelection.black, ...topicSelection.backup].map((item) => [item.candidate_id, item.poolRole]));
   const topicCandidatesWithRoles = topicSelection.all.map((item) => ({
     ...item,
@@ -971,7 +962,7 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
   const topicCoveragePath = path.join(sourcesDir, 'topic-candidate-coverage.json');
   const topicCandidateReportPath = path.join(workdir, 'topic-candidate-report.md');
   const topicCoverage = topicResult.coverage || [];
-  writeFile(topicCandidatePath, JSON.stringify({ generated_at: new Date().toISOString(), batch_id: batch.id, policy: { source_scope: 'event-heat-ranking-top-k', candidate_limit: 30, t_unchanged: true, final_f_unchanged: true }, coverage: topicCoverage, items: topicCandidatesWithRoles }, null, 2));
+  writeFile(topicCandidatePath, JSON.stringify({ generated_at: new Date().toISOString(), batch_id: batch.id, policy: { source_scope: 'global-event-heat-top-k', candidate_limit: 30, candidate_selection: 'global_heat_research_reader_entry', minimum_reader_entry_score: 12, t_unchanged: true, final_f_unchanged: true }, coverage: topicCoverage, items: topicCandidatesWithRoles }, null, 2));
   writeFile(topicPreselectionPath, JSON.stringify({ generated_at: new Date().toISOString(), batch_id: batch.id, selection_summary: topicSelection.summary, core: topicSelection.core, black: topicSelection.black, backup: topicSelection.backup, items: topicCandidatesWithRoles }, null, 2));
   writeFile(topicCoveragePath, JSON.stringify({ schema_version: 2, generated_at: new Date().toISOString(), batch_id: batch.id, event_count: topicCoverage.length, covered_count: topicCoverage.filter((item) => item.status === 'covered').length, uncovered_count: topicCoverage.filter((item) => item.status === 'uncovered').length, unreported_count: topicCoverage.filter((item) => item.status === 'unreported').length, coverage_repair_attempted: Boolean(topicResult.audit?.coverage_repair_attempted), coverage_repair_event_count: topicResult.audit?.coverage_repair_event_count || 0, items: topicCoverage }, null, 2));
   writeFile(topicCandidateReportPath, topicCandidatesMarkdown({ candidates: topicCandidatesWithRoles, selection: topicSelection, coverage: topicCoverage }));
@@ -1102,7 +1093,7 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
     }
   } else {
     store.saveSocialPreselection(batchId, socialPool);
-    if (topicSelection.selected.length) onProgress(`已生成 ${topicSelection.selected.length} 个讨论导向选题候选（按类别分别排序）：${topicSelection.selected.map((group) => `${group.selectionContentClass}·${group.poolRole}·${group.title}`).join('、')}`);
+    if (topicSelection.selected.length) onProgress(`已生成 ${topicSelection.selected.length} 个讨论导向选题候选（跨题材统一排序）：${topicSelection.selected.map((group) => `${group.selectionCategory}·${group.poolRole}·${group.title}`).join('、')}`);
     if (briefPool.length) onProgress(`已生成 ${briefPool.length} 个早报维度组：${briefPool.map((group) => group.title).join('、')}`);
   }
   const artifacts = [

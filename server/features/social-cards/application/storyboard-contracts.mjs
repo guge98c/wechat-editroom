@@ -21,6 +21,7 @@ const CONTENT_TYPE_LIMITS = Object.freeze({
 });
 
 function normalizeContentType(contentType) {
+  if (contentType === 'technology' || contentType === 'trend' || contentType === 'open_source_technology' || contentType === 'open_source_trend') return 'event';
   return CONTENT_ENTRY_POINTS[contentType] ? contentType : 'repository';
 }
 

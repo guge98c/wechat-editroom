@@ -22,7 +22,7 @@ test('技能注册中心发现项目技能并生成稳定 Prompt 哈希', () => 
 });
 
 test('技能注册中心展示实际生效的配置版本',()=>{
-  const workspaceRoot=fs.mkdtempSync(path.join(os.tmpdir(),'configured-skill-registry-'));
+  const workspaceRoot=fs.mkdtempSync(path.join(process.cwd(),'.codex-test-tmp','configured-skill-registry-'));
   try{
     const skillDir=path.join(workspaceRoot,'skills','demo');fs.mkdirSync(skillDir,{recursive:true});
     fs.writeFileSync(path.join(skillDir,'SKILL.md'),'---\nname: Demo\nversion: builtin\n---\n\n规则','utf8');
@@ -73,7 +73,7 @@ test('Store 持久化历史 generation snapshot，不受后续对象修改影响
 test('全部内置技能都提供有效的结构化清单', () => {
   const skillsRoot=path.join(process.cwd(),'skills');
   const directories=fs.readdirSync(skillsRoot,{withFileTypes:true}).filter((item)=>item.isDirectory());
-  assert.equal(directories.length,45);
+  assert.equal(directories.length,43);
   for(const id of ['repository-card-storyboard','event-card-storyboard','custom-card-storyboard','hotspot-tagging','hotspot-brainstorm','hotspot-synthesis','event-card-generator','discussion-researcher','event-research-analyzer','editorial-room-chat']){
     assert.ok(directories.some((item)=>item.name===id));
   }

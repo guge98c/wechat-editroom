@@ -46,6 +46,12 @@ const researchRelationLabels = {
   comparison: "对比关系",
   counterexample: "反例关系",
 };
+const contentClassLabels = {
+  news_event: "热点事件",
+  open_source_technology: "开源技术",
+  open_source_trend: "开源趋势",
+  github_project: "纯项目",
+};
 
 function uniqueBy(items, keyOf) {
   const seen = new Set();
@@ -206,7 +212,11 @@ function renderCandidates(candidates, track = activeTrack()) {
         const articleTypeTagClass=isIndependentWriting
           ? "dimension-tag"
           : "dimension-tag";
-        const materialTypeTag=track==='social_cards'&&!isCustom&&item.material_type
+        const contentClass = item.content_class || item.contentClass || item.classification?.content_class || item.classification?.contentClass;
+        const contentClassTag = track === 'social_cards' && !isCustom && contentClass
+          ? ` <span class="dimension-tag content-class-tag">${escapeHtml(contentClassLabels[contentClass] || contentClass)}</span>`
+          : "";
+        const materialTypeTag=track==='social_cards'&&!isCustom&&!contentClass&&item.material_type
           ? ` <span class="dimension-tag">${escapeHtml(item.material_type==='repository'?'GitHub 项目':'事件图文')}</span>`
           : "";
         const lane=distributionLane(item.distribution_lane);
@@ -217,7 +227,7 @@ function renderCandidates(candidates, track = activeTrack()) {
             ? `<p class="candidate-selection-reason"><b>评分状态</b>${escapeHtml(item.score_warning || "缺少事件价值或事实资料，补齐后再评分")}</p>`
             : "";
         const card = `<article class="candidate-card ${item.composite ? "composite" : ""}" data-id="${escapeHtml(item.candidate_id)}">
-          <h4>${escapeHtml(headline)}${track==="article"?` <span class="${articleTypeTagClass}">${articleTypeLabel}</span>`:""}${materialTypeTag}${dimensionLabel ? ` <span class="dimension-tag dimension-${escapeHtml(item.dimension)}">${dimensionLabel}</span>` : ""}${item.composite ? ' <span class="composite-tag">综合</span>' : ""}</h4>
+          <h4>${escapeHtml(headline)}${track==="article"?` <span class="${articleTypeTagClass}">${articleTypeLabel}</span>`:""}${contentClassTag}${materialTypeTag}${dimensionLabel ? ` <span class="dimension-tag dimension-${escapeHtml(item.dimension)}">${dimensionLabel}</span>` : ""}${item.composite ? ' <span class="composite-tag">综合</span>' : ""}</h4>
           ${track==='article'&&!item.composite&&item.event_conclusion?`<p class="candidate-description">代表报道：${escapeHtml(item.hotspot_title)}</p>`:''}
           ${track==='social_cards'&&item.repository_description?`<p class="candidate-description">${escapeHtml(item.repository_description)}</p>`:''}
           ${track==='social_cards'&&item.social_selection_reason?`<p class="candidate-selection-reason"><b>入选理由</b>${escapeHtml(item.social_selection_reason)}</p>`:''}

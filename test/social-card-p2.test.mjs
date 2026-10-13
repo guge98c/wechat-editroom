@@ -75,7 +75,8 @@ test('故事板保存通过共享类型判断解析结构化内容，不引用�
   const editor = fs.readFileSync(path.join(root, 'public', 'src', 'views', 'social-editor.js'), 'utf8');
   const model = fs.readFileSync(path.join(root, 'public', 'src', 'views', 'social-editor-model.js'), 'utf8');
   assert.match(editor, /import \{[^}]*isStructuredCardBlockType[^}]*\} from "\.\/social-editor-model\.js"/);
-  assert.match(editor, /if\(isStructuredCardBlockType\(type\)\)Object\.assign/);
+  assert.match(editor, /if\(isStructuredCardBlockType\(type\)\)\s*\{/);
+  assert.match(editor, /Object\.assign\(block,structuredContent/);
   assert.doesNotMatch(editor, /CARD_STRUCTURED_BLOCK_TYPES/);
   assert.match(model, /export function isStructuredCardBlockType\(type\)/);
 });

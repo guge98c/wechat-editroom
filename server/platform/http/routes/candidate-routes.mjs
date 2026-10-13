@@ -4,6 +4,7 @@ import { isPureProjectEvent, readDiscussionResearchContext, scoreCards } from '.
 import { resolveEditorialMode, routeBreakingAnalysis } from '../../../features/articles/index.mjs';
 import { buildMaterialBrief } from '../../../shared/domain/material-brief.mjs';
 import { buildCustomFactSheet, customFactMarkdown, customSourceUrl, socialRouteForContentType } from '../../../features/social-cards/index.mjs';
+import { socialRouteForContentClass } from '../../../features/social-cards/domain/social-routing.mjs';
 import { createRepositoryCandidate } from '../../../features/social-cards/index.mjs';
 import { extractLocalProjectPath, readLocalProjectViaRegistry as readLocalProject } from '../../integrations/local-project-reader.mjs';
 import { createRequestHarnessGateway, resolveSkillToolPolicy } from '../../skills/pipeline-runtime.mjs';
@@ -23,8 +24,14 @@ function readJsonFile(filePath) {
 }
 
 function articleRouteProjectHotspots(store, batchId, hotspots = []) {
-  void store; void batchId;
-  return hotspots.filter((hotspot) => isPureProjectEvent({ representative_title: hotspot.title, title: hotspot.title, articles: [hotspot], url: hotspot.url, source_group: hotspot.source_group }));
+  return hotspots.filter((hotspot) => {
+    const isProjectSource = isPureProjectEvent({ representative_title: hotspot.title, title: hotspot.title, articles: [hotspot], url: hotspot.url, source_group: hotspot.source_group });
+    if (!isProjectSource) return false;
+    const membership = store.listEventHotspots?.({ batchId })?.find((item) => Number(item.hotspot_id) === Number(hotspot.id));
+    const classification = membership?.event_id ? store.getEventRecord?.(membership.event_id) : null;
+    const contentClass = String(classification?.content_class || '');
+    return !(classification?.article_eligible && ['open_source_technology', 'open_source_trend', 'news_event'].includes(contentClass));
+  });
 }
 
 function selectedWritingMaterialIds(input = {}) {
@@ -158,14 +165,13 @@ export async function handleCandidateRoutes({ request, response, pathname, searc
   if (promoteArticleMatch && request.method === 'POST') {
     const candidate = store.getCandidate(Number(promoteArticleMatch[1]));
     if (!candidate) return respond(json, response, 404, { error: '候选不存在' });
-    if (candidate.material_type !== 'repository' && !isPureProjectEvent(candidate)) return respond(json, response, 400, { error: '该操作只适用于 GitHub 项目候选' });
     const input = await body(request);
     const evidence = Array.isArray(input.evidence) ? input.evidence.filter((item) => item && String(item.claim || '').trim()) : [];
     if (!evidence.length) return respond(json, response, 400, { error: '人工选入文章路线必须提供至少一条可核验事实或实践依据' });
     const reason = String(input.reason || '').trim();
     if (!reason) return respond(json, response, 400, { error: '人工选入文章路线必须填写编辑理由' });
-    store.db.prepare(`UPDATE candidates SET article_route_approved=1, article_route_evidence_json=?, article_eligible=1, article_eligibility_reason=?, content_route='manual_review', score_status='ready', score_warning='', status='pooled', updated_at=? WHERE id=?`)
-      .run(JSON.stringify(evidence), `人工文章选题：${reason}；仍需通过事实基座门禁`, new Date().toISOString(), candidate.id);
+    store.db.prepare(`UPDATE candidates SET article_route_approved=1, article_route_evidence_json=?, article_eligible=1, article_eligibility_reason=?, content_class=COALESCE(NULLIF(? ,''),content_class), content_route='manual_review', score_status='ready', score_warning='', status='pooled', updated_at=? WHERE id=?`)
+      .run(JSON.stringify(evidence), `人工文章选题：${reason}；仍需通过事实基座门禁`, String(input.contentClass || candidate.content_class || ''), new Date().toISOString(), candidate.id);
     store.addCandidateTracks(candidate.id, ['article'], { status: 'pooled', pool_role: '人工晋级文章' });
     return respond(json, response, 200, store.getCandidate(candidate.id));
   }
@@ -199,13 +205,15 @@ export async function handleCandidateRoutes({ request, response, pathname, searc
       if (projects.length) return respond(json, response, 409, { error: 'GitHub 项目默认只能进入项目图文池；文章路线需要人工选题放行并通过事实门禁', code: 'ARTICLE_ROUTE_REQUIRES_PROMOTION', hotspotIds: projects.map((item) => item.id) });
     }
     const added = store.addCandidates(batchId, input.hotspotIds, { tracks });
-    if (tracks.includes('social_cards') && (input.socialMaterialType || input.socialOutputMode)) {
+    if (tracks.includes('social_cards') && (input.socialContentClass || input.socialMaterialType || input.socialOutputMode)) {
       const outputMode = String(input.socialOutputMode || '');
       const materialType = String(input.socialMaterialType || (outputMode.includes('tool-cards') ? 'repository' : outputMode.includes('custom-cards') ? 'custom' : 'event'));
-      const route = socialRouteForContentType(materialType);
+      const route = input.socialContentClass ? socialRouteForContentClass(String(input.socialContentClass)) : socialRouteForContentType(materialType);
+      const resolvedMaterialType = input.socialContentClass === 'github_project' ? 'repository' : input.socialContentClass ? 'event' : route.materialType;
       const socialCandidates = store.listCandidates(batchId, 'social_cards').filter((candidate) => input.hotspotIds.some((hotspotId) => Number(hotspotId) === Number(candidate.hotspot_id)));
       for (const candidate of socialCandidates) {
-        saveSocialMaterialType(store, candidate.id, route.materialType);
+        saveSocialMaterialType(store, candidate.id, resolvedMaterialType);
+        if (input.socialContentClass && store.db?.prepare) store.db.prepare('UPDATE candidates SET content_class=?,article_eligible=?,content_route=?,updated_at=? WHERE id=?').run(String(input.socialContentClass), input.socialContentClass === 'github_project' ? 0 : 1, input.socialContentClass === 'github_project' ? 'social_only' : 'article', new Date().toISOString(), candidate.id);
         store.updateCandidateTrack(candidate.id, 'social_cards', { output_mode: route.outputMode, pool_role: input.poolRole || route.poolRole });
         store.saveCardEditorial(candidate.id, { ...store.getCardEditorial(candidate.id), output_mode: route.outputMode });
       }

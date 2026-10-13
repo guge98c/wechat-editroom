@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildDiscussionResearch, buildTopicCandidates, DISCUSSION_RESEARCH_TOP_K, DISCUSSION_RESEARCH_TOP_K_OPTIONS, resolveDiscussionResearchTopK } from '../server/features/research/index.mjs';
 
-test('讨论研判 Top-K 默认值为8且只允许配置5、8、10', () => {
-  assert.equal(DISCUSSION_RESEARCH_TOP_K, 8);
-  assert.deepEqual(DISCUSSION_RESEARCH_TOP_K_OPTIONS, [5, 8, 10]);
+test('讨论研判 Top-K 默认值为15且只允许配置5、8、10、15', () => {
+  assert.equal(DISCUSSION_RESEARCH_TOP_K, 15);
+  assert.deepEqual(DISCUSSION_RESEARCH_TOP_K_OPTIONS, [5, 8, 10, 15]);
   assert.equal(resolveDiscussionResearchTopK(5), 5);
   assert.equal(resolveDiscussionResearchTopK('10'), 10);
-  assert.equal(resolveDiscussionResearchTopK(6), 8);
+  assert.equal(resolveDiscussionResearchTopK(6), 15);
 });
 
 function event(id, rank, parts, card = {}) {
@@ -25,7 +25,7 @@ function event(id, rank, parts, card = {}) {
   };
 }
 
-test('阶段0只取T榜前K，并保留T不变策略', () => {
+test('阶段0按全局热度选 Top-K，并保留 T 不变策略', () => {
   const events = [
     event('E1', 1, { who: 'openai', object: '模型', actionType: '发布' }),
     event('E2', 2, { who: 'openai', object: '模型', actionType: '争议回应' }),
@@ -39,7 +39,7 @@ test('阶段0只取T榜前K，并保留T不变策略', () => {
   assert.equal(report.topic_candidates.length, 0);
 });
 
-test('阶段0的讨论研判Top-K排除项目图文，但事件热榜排名保持为T原排名', () => {
+test('阶段0的讨论研判Top-K排除纯项目，其他题材跨分类按全局热度排序', () => {
   const project = { ...event('P1', 1, { who: '作者A', object: '项目', actionType: '发布' }), classification: { contentClass: 'github_project' } };
   const news = event('E1', 2, { who: 'openai', object: '模型', actionType: '发布' });
   const technology = event('E2', 3, { who: 'google', object: '模型', actionType: '发布' });
@@ -51,7 +51,7 @@ test('阶段0的讨论研判Top-K排除项目图文，但事件热榜排名保�
   assert.deepEqual(report.scope.items.map((item) => item.event_id), ['E1', 'E2']);
   assert.deepEqual(report.scope.items.map((item) => item.rank), [2, 3]);
   assert.equal(report.scope.excluded_count, 1);
-  assert.deepEqual(report.policy.excluded_content_classes, ['github_project']);
+  assert.equal(report.scope.excluded_repository_project_count, 1);
 });
 
 test('阶段0不生成事件内结论或事件间关系', () => {
