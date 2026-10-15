@@ -66,6 +66,7 @@ export function bindPipelineHarnessGateway(gateway, options = {}) {
         const { messages = [], ...modelInput } = input || {};
         const purpose = modelInput.purpose || options.purpose || 'pipeline-stage';
         return runPipelineStage({ ...options, ...modelInput, purpose, messages, gateway: target,
+          signal: modelInput.signal || options.signal || null,
           skillId: modelInput.skillId || purpose, entryPoint: modelInput.entryPoint || options.entryPoint || 'pipeline',
           stageId: modelInput.stageId || purpose, generationSnapshotId: options.generationSnapshotId || modelInput.generationSnapshotId });
       };

@@ -11,8 +11,26 @@ export const BATCH_LEVEL_AI_JOB_TYPES = new Set(['tag', 'retag', 'event-cards', 
 
 export function createAiJobHandlers({ store, gateway, config, log, onThinking = () => {} }) {
   const progress = (job) => (message) => log(job, message);
-  const jobGateway = (job) => bindPipelineHarnessGateway(gateway, { store, batchId: job.batchId, candidateId: job.candidateId,
-    rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, entryPoint: `batch-job:${job.type}` });
+  const jobGateway = (job) => {
+    const scoped = bindPipelineHarnessGateway(gateway, { store, batchId: job.batchId, candidateId: job.candidateId,
+      rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, entryPoint: `batch-job:${job.type}` });
+    const assertNotCancelled = () => {
+      if (!job.cancelRequested && !job.abortController?.signal.aborted) return;
+      const reason = job.cancelReason || job.abortController?.signal.reason?.message || '任务已取消';
+      throw Object.assign(new Error(reason), { code: 'JOB_CANCELLED' });
+    };
+    return new Proxy(scoped, {
+      get(target, property, receiver) {
+        if (property === 'complete') return (input) => { assertNotCancelled(); return target.complete(input); };
+        if (property === 'streamComplete') {
+          const streamComplete = Reflect.get(target, property, receiver);
+          return typeof streamComplete === 'function' ? (...args) => { assertNotCancelled(); return streamComplete(...args); } : streamComplete;
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  };
   const visualEventSink = (job) => (event) => {
     if (event?.type === 'assistant.thinking') onThinking(job, event.text);
   };
@@ -23,12 +41,12 @@ export function createAiJobHandlers({ store, gateway, config, log, onThinking = 
     ['research', async ({ job, maxAgeHours, options }) => { const result = await runResearchPipeline({ gateway: jobGateway(job), store, batchId: job.batchId, provider: job.provider, workspaceRoot: config.workspaceRoot, maxAgeHours, resumeFrom: options.resumeFrom || '', onProgress: progress(job) }); for (const failure of store.listPipelineFailures(job.batchId, { statuses: ['open', 'retrying'], stages: ['research'] })) store.resolvePipelineFailure(failure.id); return result; }],
     ['pipeline-failure-retry', async ({ job, maxAgeHours, options }) => retryPipelineFailure({ failureId: options.failureId, batchId: job.batchId, provider: job.provider, store, gateway: jobGateway(job), config, maxAgeHours, onProgress: progress(job) })],
     ['breaking-analysis', ({ job }) => runBreakingAnalysisPipeline({ gateway: jobGateway(job), store, batchId: job.batchId, provider: job.provider, workspaceRoot: config.workspaceRoot, onProgress: progress(job) })],
-    ['article', ({ job, options }) => runArticlePipeline({ gateway, store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, skillSelection: job.skillSelection, stageSelections: job.stageSelections, articleLength: config.articleLength, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
-    ['article-review', ({ job, options }) => runArticleReview({ gateway, store, batchId: job.batchId, candidateId: options.candidateId, documentKind: options.documentKind, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
-    ['daily', ({ job, options }) => runDailyPipeline({ gateway, store, batchId: job.batchId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, stageSelections: job.stageSelections, focus: options.focus, focuses: options.focuses, articleLength: config.articleLength, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
-    ['tutorial', ({ job, options }) => runTutorialPipeline({ gateway, store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, skillSelection: job.skillSelection, stageSelections: job.stageSelections, articleLength: config.articleLength, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
+    ['article', ({ job, options }) => runArticlePipeline({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, skillSelection: job.skillSelection, stageSelections: job.stageSelections, articleLength: config.articleLength, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
+    ['article-review', ({ job, options }) => runArticleReview({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: options.candidateId, documentKind: options.documentKind, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
+    ['daily', ({ job, options }) => runDailyPipeline({ gateway: jobGateway(job), store, batchId: job.batchId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, stageSelections: job.stageSelections, focus: options.focus, focuses: options.focuses, articleLength: config.articleLength, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
+    ['tutorial', ({ job, options }) => runTutorialPipeline({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, skillSelection: job.skillSelection, stageSelections: job.stageSelections, articleLength: config.articleLength, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
     ['typeset', ({ job, options }) => runTypesetPipeline({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, documentKind: options.documentKind, theme: job.theme || 'auto', imageDeliveryMode: options.imageDeliveryMode || 'local', rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, stageId: 'typeset', onProgress: progress(job) })],
-    ['social-card', ({ job, options }) => runSocialCardPipeline({ gateway, store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
+    ['social-card', ({ job, options }) => runSocialCardPipeline({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, snapshotId: job.snapshotId, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job) })],
     ['social-card-beautify', ({ job, options }) => runSocialCardBeautify({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: options.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, styleBrief: options.styleBrief, resumeFrom: options.resumeFrom || '', onProgress: progress(job), onEvent: visualEventSink(job) })],
     ['cover-image', ({ job, options }) => runCoverImageJob({ gateway: jobGateway(job), store, batchId: job.batchId, candidateId: job.candidateId, provider: job.requestedProvider, workspaceRoot: config.workspaceRoot, theme: job.theme || '', mode: options.mode || job.mode || 'standard', rootRunId: `job:${job.id}`, workflowRunId: `job:${job.id}`, onProgress: progress(job), onEvent: visualEventSink(job) })],
     ['auto', async ({ job, batch, maxAgeHours }) => { const result = await runAutoPipeline({ gateway: jobGateway(job), store, config, job, batch, maxAgeHours, onProgress: progress(job) }); for (const failure of store.listPipelineFailures(job.batchId, { statuses: ['open', 'retrying'], stages: ['research'] })) store.resolvePipelineFailure(failure.id); return result; }],

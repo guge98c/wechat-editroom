@@ -117,8 +117,10 @@ export async function handleTaskRoutes({ request, response, pathname, searchPara
     const result = aiJobs.cancel(jobId);
     if (!result.ok) {
       if (result.code === 'JOB_NOT_FOUND') return respond(json, response, 404, { error: '任务不存在或服务已重启', code: result.code });
-      return respond(json, response, 409, { error: '仅支持取消排队中的 AI 任务', code: result.code, status: result.status });
+      return respond(json, response, 409, { error: '当前任务无法取消', code: result.code, status: result.status });
     }
+    if (result.cancelling) return respond(json, response, 202, { ...result.job, cancelled: false, status: 'cancelling' });
+    if (result.alreadyStopped) return respond(json, response, 200, { ...result.job, cancelled: false, alreadyStopped: true });
     return respond(json, response, 200, { ...result.job, cancelled: true });
   }
   const jobMatch = pathname.match(/^\/api\/jobs\/([^/]+)$/);

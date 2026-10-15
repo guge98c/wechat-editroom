@@ -48,6 +48,7 @@ export class AiJobManager {
       const job = this.jobs.get(this.pending.splice(index, 1)[0]);
       this.running.set(this.conflictKey(job), job.id);
       this.activeCount += 1;
+      job.abortController = new AbortController();
       job.status = 'running'; job.progress = '准备执行';
       this.store.updateAiRun(job.id, { status: 'running', progress: '准备执行' });
       // run() 当前会把业务异常落为 failed，但调度器仍必须兜住任何越过
@@ -80,11 +81,25 @@ export class AiJobManager {
     for(const job of terminal.slice(0,Math.max(0,terminal.length-limit)))this.jobs.delete(job.id);
   }
 
-  cancel(id, reason = '排队任务已取消') {
+  cancel(id, reason = '任务已取消') {
     const job = this.jobs.get(id);
     const persisted = job ?? this.store.getAiRun(id);
     if (!persisted) return { ok: false, code: 'JOB_NOT_FOUND' };
-    if (persisted.status !== 'queued') return { ok: false, code: 'JOB_NOT_QUEUED', status: persisted.status };
+    if (persisted.status === 'running') {
+      if (!job?.abortController) return { ok: false, code: 'JOB_NOT_CANCELLABLE', status: persisted.status };
+      job.cancelRequested = true;
+      job.cancelReason = reason;
+      if (!job.abortController.signal.aborted) {
+        job.abortController.abort(Object.assign(new Error(reason), { code: 'JOB_CANCELLED' }));
+      }
+      return { ok: true, cancelling: true, job: this.get(id) };
+    }
+    if (persisted.status !== 'queued') {
+      if (['completed', 'failed', 'interrupted', 'cancelled'].includes(persisted.status)) {
+        return { ok: true, alreadyStopped: true, job: persisted };
+      }
+      return { ok: false, code: 'JOB_NOT_QUEUED', status: persisted.status };
+    }
     const pendingIndex = this.pending.indexOf(id);
     if (pendingIndex >= 0) this.pending.splice(pendingIndex, 1);
     if (job) {
@@ -142,10 +157,22 @@ export class AiJobManager {
       const handler = this.handlers.get(job.type);
       if (!handler) throw new Error('未知 AI 任务');
       const result = await handler({ job, batch, maxAgeHours, options });
+      if (job.abortController?.signal.aborted) throw job.abortController.signal.reason || new Error(job.cancelReason || '任务已取消');
       job.result=result; job.status='completed'; job.finishedAt=new Date().toISOString();
       this.store.updateAiRun(job.id,{status:'completed',result_json:JSON.stringify(result),progress:job.progress});
       if(persistHarnessRun){this.store.appendAgentRunEvent?.(harnessRunId,{type:'run.completed',stageId:'job'});this.store.saveAgentStep?.({agentRunId:harnessRunId,step:0,phase:'job_completed',summary:{type:job.type}});this.store.finishAgentRun?.(harnessRunId,{status:'completed',modelSteps:0,toolCalls:0});}
     } catch(error) {
+      if (job.cancelRequested || job.abortController?.signal.aborted) {
+        const reason = job.cancelReason || error?.message || '任务已取消';
+        job.status = 'cancelled'; job.error = reason; job.finishedAt = new Date().toISOString();
+        this.log(job, reason);
+        this.store.updateAiRun(job.id, { status: 'cancelled', error: reason, progress: reason });
+        if (persistHarnessRun) {
+          this.store.appendAgentRunEvent?.(harnessRunId, { type: 'run.cancelled', stageId: 'job', error: reason });
+          this.store.finishAgentRun?.(harnessRunId, { status: 'cancelled', modelSteps: 0, toolCalls: 0, error: reason });
+        }
+        return;
+      }
       if (this.onFailure) this.onFailure({ job, error });
       job.status='failed'; job.error=error.message; job.finishedAt=new Date().toISOString(); this.log(job,`失败：${error.message}`);
       this.store.updateAiRun(job.id,{status:'failed',error:error.message});
