@@ -29,6 +29,24 @@ test('阶段模型按 purpose 路由，未配置时保持调用方 provider', ()
   assert.equal(gateway.resolveForInput({ provider:'base', purpose:'custom-social-chat' }).providerName, 'base');
 });
 
+test('实际模型用途都映射到对应流程档位，避免静默回退', () => {
+  const gateway = makeGateway({
+    collection:'fast',
+    'research.synthesis':'quality',
+    'drafting.final-gate':'quality',
+    'graphic-generation.ai-visual':'quality',
+  });
+  assert.equal(stageForPurpose('repo-interest-filter'), 'collection');
+  assert.equal(stageForPurpose('repo-discovery-interest-filter'), 'collection');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'repo-interest-filter' }).providerName, 'fast');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'project-reader-value' }).providerName, 'quality');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'article-research-coverage' }).providerName, 'quality');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'article-final-repair-length' }).providerName, 'quality');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'daily-repair' }).providerName, 'quality');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'tutorial-repair' }).providerName, 'quality');
+  assert.equal(gateway.resolveForInput({ provider:'base', purpose:'social-card-ai-visual-generation-agent' }).providerName, 'quality');
+});
+
 test('四档模型配置通过网关生效，未配档位时保持旧行为', () => {
   const gateway = makeGateway({}, null, { fast:'fast', quality:'quality' });
   assert.equal(gateway.resolveForInput({ provider:'base', purpose:'hotspot-tagging' }).providerName, 'fast');
@@ -43,6 +61,7 @@ test('页面只配置四档模型，流程节点由程序按档位映射', () =>
   assert.equal(stageModels.research, 'quality');
   assert.equal(stageModels.typeset, 'deterministic');
   assert.equal(stageModels['graphic-generation.layout-repair'], 'fast');
+  assert.equal(stageModels['graphic-generation.ai-visual'], 'quality');
 });
 
 test('阶段子配置优先于父节点配置', () => {
