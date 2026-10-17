@@ -233,7 +233,7 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
       }
     }
     atlas.eventHotlist = (eventHeatRanking.items || []).map((item) => ({ ...item, editorial_category: item.editorialCategory || '' }));
-    atlas.eventHeatRankings = Object.fromEntries(Object.entries(eventHeatRanking.rankings || {}).map(([category, board]) => [category, {
+    atlas.eventHeatRankings = Object.fromEntries(Object.entries(eventHeatRanking.categoryRankings || {}).map(([category, board]) => [category, {
       ...board,
       items: (board.items || []).map((item) => ({ ...item, editorial_category: item.editorialCategory || '' })),
     }]));
