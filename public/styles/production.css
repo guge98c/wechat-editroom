@@ -634,6 +634,16 @@
 }
 .event-hotlist-summary { padding:10px 20px; border-bottom:1px solid var(--line); background:var(--paper); color:var(--muted); font-size:11px; }
 
+.event-hotlist-topic-group { align-items:start; }
+.event-hotlist-topic-members { grid-column:2 / -1; width:100%; margin-top:10px; border-top:1px dashed var(--line); padding-top:9px; }
+.event-hotlist-topic-members summary { cursor:pointer; color:var(--ink); font-size:11px; font-weight:700; }
+.event-hotlist-topic-child { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; align-items:center; gap:8px; padding:9px 0; border-top:1px solid var(--line); }
+@media (max-width:760px) {
+  .event-hotlist-topic-group { grid-template-columns:48px minmax(0,1fr); }
+  .event-hotlist-topic-members { grid-column:1 / -1; }
+  .event-hotlist-topic-child { grid-template-columns:minmax(0,1fr) auto; }
+}
+
 /* Contrast hierarchy: keep deep tones for the rail, primary actions and active work surfaces only. */
 .rail,.source-compose,.runtime-commandbar,.maintenance-panel,.keyword-cloud,.event-rank,.phone-bar { background:var(--ink-strong); }
 .source-ledger-panel { border-top-color:var(--ink-strong); }

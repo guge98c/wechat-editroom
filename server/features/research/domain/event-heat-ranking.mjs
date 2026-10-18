@@ -341,27 +341,65 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
   if (!currentMemberships.length) return { schemaVersion: 2, titleVersion: 2, scoringVersion: EVENT_HEAT_RANKING_VERSION, generatedAt: new Date(asOf).toISOString(), batchId: batch.id, topicGroups: [], items: [] };
   const historicalMemberships = store.listEventHotspots?.({ limit: 100000 }) || currentMemberships;
   const hotspotsById = new Map((batch.hotspots || []).map((hotspot) => [Number(hotspot.id), hotspot]));
+  const eventInputGroups = new Map();
+  for (const event of events || []) {
+    const normalized = event?.normalized || {};
+    const familyKey = [normalized.whoKey, normalized.objectKey, normalized.timeWindow].map((value) => String(value || '').trim()).join('|');
+    if (!normalized.whoKey || !normalized.objectKey || !normalized.timeWindow) continue;
+    if (!eventInputGroups.has(familyKey)) eventInputGroups.set(familyKey, []);
+    eventInputGroups.get(familyKey).push(event);
+  }
+  const eventAliases = new Map();
+  const mergedEventInputs = new Map();
+  for (const group of eventInputGroups.values()) {
+    const components = [];
+    for (const event of group) {
+      const match = components.find((component) => component.some((candidate) => structuredMatch(candidate.normalized || {}, event.normalized || {}).score >= 82));
+      if (match) match.push(event);
+      else components.push([event]);
+    }
+    for (const component of components) {
+      const winner = [...component].sort((left, right) => Number(right.eventHeatScore || 0) - Number(left.eventHeatScore || 0)
+        || Number(right.report_count || right.articles?.length || 0) - Number(left.report_count || left.articles?.length || 0)
+        || String(left.event_id || left.id).localeCompare(String(right.event_id || right.id)))[0];
+      const canonicalId = winner.event_id || winner.id;
+      const merged = {
+        ...winner,
+        event_id: canonicalId,
+        id: canonicalId,
+        hotspot_ids: [...new Set(component.flatMap((event) => event.hotspot_ids || event.articles?.map((article) => article.hotspot_id) || []))],
+        articles: component.flatMap((event) => event.articles || []),
+        report_count: component.reduce((sum, event) => sum + Number(event.report_count || event.articles?.length || 0), 0),
+        mergedEventIds: component.map((event) => event.event_id || event.id).filter(Boolean),
+      };
+      for (const event of component) eventAliases.set(event.event_id || event.id, canonicalId);
+      mergedEventInputs.set(canonicalId, merged);
+    }
+  }
   const currentByEvent = new Map();
   for (const membership of currentMemberships) {
-    const eventId = membership.event_id;
+    const eventId = eventAliases.get(membership.event_id) || membership.event_id;
     if (!currentByEvent.has(eventId)) currentByEvent.set(eventId, []);
     currentByEvent.get(eventId).push(membership);
   }
   const historyByEvent = new Map();
   for (const membership of historicalMemberships) {
-    const eventId = membership.event_id;
+    const eventId = eventAliases.get(membership.event_id) || membership.event_id;
     if (!historyByEvent.has(eventId)) historyByEvent.set(eventId, []);
     historyByEvent.get(eventId).push(membership);
   }
   const records = new Map((store.listEventRecords?.({ limit: 100000 }) || []).map((event) => [event.id, event]));
   const eventInputs = new Map((events || []).map((event) => [event.event_id || event.id, event]));
+  for (const [eventId, event] of mergedEventInputs) eventInputs.set(eventId, event);
   const previous = new Map((previousItems || []).map((item) => [item.eventId, item]));
   const items = [...currentByEvent.entries()].map(([eventId, memberships]) => {
     const record = records.get(eventId) || { id: eventId, title: memberships[0]?.title || eventId, event_state: 'continuing' };
     const input = eventInputs.get(eventId) || record;
     const mergedEvent = { ...record, ...input, id: eventId };
     const scored = scoreClassifiedEvent({ event: mergedEvent, currentMemberships: memberships, historicalMemberships: historyByEvent.get(eventId) || memberships, hotspotsById, asOf });
-    return { ...scored, normalized: input.normalized || record.normalized || {}, whoKey: input.normalized?.whoKey || '' };
+    return input?.mergedEventIds?.length > 1
+      ? { ...scored, mergedEventIds: input.mergedEventIds, normalized: input.normalized || record.normalized || {}, whoKey: input.normalized?.whoKey || '' }
+      : { ...scored, normalized: input.normalized || record.normalized || {}, whoKey: input.normalized?.whoKey || '' };
   }).sort((left, right) => right.scoreValue - left.scoreValue
     || right.incrementScore - left.incrementScore
     || right.sourceCount - left.sourceCount
@@ -408,6 +446,6 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
   };
 }
 
-import { buildEventTitle } from './event-resolution-shadow.mjs';
+import { buildEventTitle, structuredMatch } from './event-resolution-shadow.mjs';
 import { EDITORIAL_CATEGORIES, isRepositoryEvent, normalizeEditorialCategory } from './editorial-categories.mjs';
 import { buildEventTopicGroups } from './event-topic-groups.mjs';

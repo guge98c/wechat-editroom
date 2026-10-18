@@ -410,7 +410,7 @@ test('事件卡生成：截断自动拆分，单事件失败不阻塞整批', as
   const store = { updateModelCall(id, fields) { invalid.push({ id, ...fields }); } };
   const gateway = { config:{ defaultProvider:'deepseek', providers:{ deepseek:{ maxOutputTokens:8192 } } }, async complete(input) {
     calls += 1;
-    const text = input.messages[1].content.replace(/^【极简重试】[^\n]*\n/, '');
+    const text = input.messages[1].content.replace(/^【[^】]+】[^\n]*\n/, '');
     const events = JSON.parse(text);
     if (events.length > 1) return { callId:calls, content:'{"items":[', finishReason:'length', context:{}, usage:{} };
     const id = events[0].event_id;
@@ -433,7 +433,7 @@ test('事件卡生成：模型返回合法 JSON 但漏项时自动极简重试',
   let calls = 0;
   const gateway = { config:{ defaultProvider:'deepseek', providers:{ deepseek:{ maxOutputTokens:8192 } } }, async complete(input) {
     calls += 1;
-    const events = JSON.parse(input.messages[1].content.replace(/^【极简重试】[^\n]*\n/, ''));
+    const events = JSON.parse(input.messages[1].content.replace(/^【[^】]+】[^\n]*\n/, ''));
     if (calls === 1) return { callId:calls, finishReason:'stop', content:'{"items":[]' + '}', context:{}, usage:{} };
     return { callId:calls, finishReason:'stop', context:{}, usage:{}, content:JSON.stringify({items:[{
       event_id:events[0].event_id, conclusion:'补回的事件卡', confirmed_facts:[], source_increment:[], disagreements:[], timeline:[], unverified:[], angles:[],
