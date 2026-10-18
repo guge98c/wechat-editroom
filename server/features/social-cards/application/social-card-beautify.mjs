@@ -17,7 +17,7 @@ import { createSocialCardStoryboardThemeSnapshot, getSocialCardTemplateCapabilit
 import { createSocialCardAiVisualStageRecorder, writeSocialCardAiVisualSkillManifest } from './social-card-ai-visual-pipeline.mjs';
 import { AI_VISUAL_DOCUMENT_WRITE, runSocialCardAiVisualGenerationAgent } from './social-card-ai-visual-agent.mjs';
 import { generateSocialCardCopy, validateSocialCardCopy } from './social-card-copy.mjs';
-import { socialStoryboardClassForContentClass } from '../domain/social-routing.mjs';
+import { contentTypeForSocialRoute, socialStoryboardClassForMaterialType } from '../domain/social-routing.mjs';
 
 const execFileAsync = promisify(execFile);
 export const SOCIAL_CARD_BEAUTIFY_HTML = 'ai-beautified.html';
@@ -178,9 +178,7 @@ function hasBundledVisualReference(skillBundle, referenceName) {
 
 function beautifyContentType(candidate, planEnvelope = null) {
   if (planEnvelope?.pageBudget?.contentType) return String(planEnvelope.pageBudget.contentType);
-  if (candidate?.content_class === 'github_project') return 'repository';
-  if (candidate?.content_class === 'custom') return 'custom';
-  return 'event';
+  return contentTypeForSocialRoute(candidate);
 }
 
 function syncAiThemeSnapshot({ workdir, store, editorial, candidate }) {
@@ -274,9 +272,9 @@ export function buildBeautifyContext({ workdir, original, candidate, editorial, 
     ? { ...themeSnapshot, id: String(editorial.visual_style) }
     : themeSnapshot;
   const rawChannelMode = planEnvelope?.channel_mode || themeSnapshot?.channelMode || bodyData(original, 'channel') || String(editorial?.output_mode || 'wechat');
-  const candidateContentType = candidate?.content_class === 'github_project'
+  const candidateContentType = candidate?.material_type === 'repository'
     ? 'repository'
-    : candidate?.content_class === 'custom'
+    : candidate?.material_type === 'custom'
       ? 'custom'
       : 'event';
   const contentType = String(planEnvelope?.pageBudget?.contentType || themeSnapshot?.contentType || candidateContentType);
@@ -788,7 +786,7 @@ export async function runSocialCardBeautify({ gateway, store, batchId, candidate
       channelMode: context.channelMode,
       topic: candidate.hotspot_title,
       contentType: context.contentType,
-      storyboardClass: context.contentType === 'event' ? socialStoryboardClassForContentClass(candidate.content_class) : undefined,
+      storyboardClass: socialStoryboardClassForMaterialType(context.contentType),
       factData,
       sourceUrl: factDocument.sourceUrl || factDocument.source_url || '',
       eventAnalysis: context.contentType === 'event' ? factData : null,

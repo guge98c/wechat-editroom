@@ -21,9 +21,15 @@ const PERFORMANCE_THRESHOLDS = Object.freeze({
 test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务闭环', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'write-assistant-e2e-'));
   const workspaceRoot = path.join(root, 'workspace');
-  const configRoot = path.join(root, 'config');
+  const configRoot = path.join(projectRoot, '.codex-test-tmp', `mainline-config-${process.pid}-${Date.now()}`);
   const databasePath = path.join(workspaceRoot, 'data', 'workbench.db');
   const rsshubRoot = createRsshubFixture(root);
+  const fixtureScriptDir = path.join(configRoot, 'scripts', 'runtime');
+  fs.mkdirSync(fixtureScriptDir, { recursive: true });
+  const rsshubStartScript = path.join(fixtureScriptDir, 'rsshub-start.ps1');
+  const rsshubStopScript = path.join(fixtureScriptDir, 'rsshub-stop.ps1');
+  fs.writeFileSync(rsshubStartScript, '# E2E RSSHub is already served by the HTTP fixture.\n', 'utf8');
+  fs.writeFileSync(rsshubStopScript, '# E2E RSSHub fixture lifecycle is owned by the test.\n', 'utf8');
   assert.notEqual(path.resolve(workspaceRoot), projectRoot, 'E2E 必须使用隔离工作区');
   fs.mkdirSync(path.join(workspaceRoot, 'data', 'source-cache'), { recursive: true });
   fs.mkdirSync(path.join(workspaceRoot, 'data', 'installed-skills'), { recursive: true });
@@ -55,7 +61,7 @@ test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务�
     assert.ok(fs.existsSync(databasePath), 'E2E 应创建临时 SQLite 数据库');
     assert.ok(!path.resolve(databasePath).toLowerCase().startsWith(`${projectRoot}${path.sep}`.toLowerCase()), '临时数据库不得落到项目目录');
 
-    writeFixtureConfig(configRoot, { workspaceRoot, rsshub: { baseUrl: rsshub.baseUrl, rootDir: rsshubRoot, keepAlive: true, maxAgeHours: 168, allowUndated: true }, llm: { defaultProvider: 'fixture', providers: { fixture: { label: 'E2E Fixture', baseUrl: model.baseUrl, protocol: 'chat_completions', model: 'fixture', apiKeyEnv: 'E2E_FIXTURE_KEY', contextWindow: 32000, maxOutputTokens: 16000, supportsJsonMode: true, supportsNativeTools: true, supportsThinkingToggle: true, enabled: true } } } });
+    writeFixtureConfig(configRoot, { workspaceRoot, rsshub: { baseUrl: rsshub.baseUrl, rootDir: rsshubRoot, startScript: rsshubStartScript, stopScript: rsshubStopScript, keepAlive: true, maxAgeHours: 168, allowUndated: true }, llm: { defaultProvider: 'fixture', providers: { fixture: { label: 'E2E Fixture', baseUrl: model.baseUrl, protocol: 'chat_completions', model: 'fixture', apiKeyEnv: 'E2E_FIXTURE_KEY', contextWindow: 32000, maxOutputTokens: 16000, supportsJsonMode: true, supportsNativeTools: true, supportsThinkingToggle: true, enabled: true } } } });
     workbench = await startWorkbench({ projectRoot, workspaceRoot, configRoot, port: 0, env: { WORKBENCH_GITHUB_API_BASE_URL: github.baseUrl } });
     const actualPort = Number(new URL(workbench.baseUrl).port);
     assert.ok(actualPort > 0);
@@ -98,7 +104,9 @@ test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务�
     assert.ok(articleHotspot, '文章热点必须来自本次 RSS 采集结果');
     assert.ok(repositoryHotspot, '图文热点必须来自本次 RSS 采集结果');
 
-    const articleCandidates = await workbench.api(`/api/batches/${batch.id}/candidates?track=article`);
+    const articleCandidates = await workbench.api(`/api/batches/${batch.id}/candidates`, {
+      method: 'POST', body: { hotspotIds: [articleHotspot.id], tracks: ['article'] },
+    });
     const articleCandidate = articleCandidates.find((item) => Number(item.hotspot_id) === Number(articleHotspot.id));
     const socialCandidates = await workbench.api(`/api/batches/${batch.id}/candidates`, {
       method: 'POST', body: { hotspotIds: [repositoryHotspot.id], tracks: ['social_cards'] },
@@ -107,13 +115,13 @@ test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务�
     assert.ok(articleCandidate, '文章候选必须由采集热点创建');
     assert.ok(socialCandidate, '图文候选必须由采集热点创建');
     await workbench.api(`/api/candidates/${articleCandidate.id}`, {
-      method: 'PATCH', body: { content_route: 'article', content_class: 'news_event', angle: '验证采集结果是否完整进入文章产物', thesis: '稳定的固定夹具可以让主链路回归测试可重复。' },
+      method: 'PATCH', body: { content_route: 'article', angle: '验证采集结果是否完整进入文章产物', thesis: '稳定的固定夹具可以让主链路回归测试可重复。' },
     });
     await workbench.api(`/api/candidates/${socialCandidate.id}`, {
-      method: 'PATCH', body: { content_route: 'social_cards', content_class: 'github_project' },
+      method: 'PATCH', body: { content_route: 'social_cards' },
     });
     await workbench.api(`/api/candidates/${articleCandidate.id}/editorial`, {
-      method: 'PUT', body: { confirmed_facts: '固定资料展示了一条可核验的测试事实。', author_opinions: '本文只验证流程完整性。', adopted_research_points: [{ point_id: 'e2e-research-1', kind: 'anomaly', statement: '事件来源的反常在于采集结果必须继续进入最终产物。' }], research_basis: '围绕该事件来源的反常与变化，验证采集结果是否进入文章产物。', forbidden_claims: '不得把测试数据写成真实行业结论。', next_action: 'WRITE_NOW', brief_status: 'LOCKED', reader_consequence: '开发者可以复跑同一条验证路径。', conflict: '改动可能导致产物缺失。' },
+      method: 'PUT', body: { confirmed_facts: '固定资料展示了一条可核验的测试事实。', author_opinions: '本文只验证流程完整性。', adopted_research_points: [], research_basis: '固定事实与来源能够支撑一篇流程验证文章。', forbidden_claims: '不得把测试数据写成真实行业结论。', next_action: 'WRITE_NOW', brief_status: 'LOCKED', reader_consequence: '开发者可以复跑同一条验证路径。', conflict: '改动可能导致产物缺失。' },
     });
     const fetchedSource = await workbench.api(`/api/candidates/${articleCandidate.id}/source`, {
       method: 'POST', body: {},
@@ -161,7 +169,14 @@ test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务�
     assert.doesNotMatch(finalContent, /<!--\s*REVIEW[\s\S]*?-->/i, '文章终稿不应残留审核标记');
     const finalDocument = await workbench.api(`/api/batches/${encodeURIComponent(batch.id)}/documents?candidateId=${articleCandidate.id}&kind=final`);
     assert.equal(finalDocument.candidate_row_id, articleCandidate.id);
-    assert.equal(finalDocument.status, 'finalized');
+    const reviewIssues = finalDocument.status === 'finalized' ? null : await workbench.api(`/api/documents/${finalDocument.id}/review-issues`);
+    const gateDiagnostics = finalDocument.status === 'finalized' ? null : Object.fromEntries(['03-title-risk.json','03-title-lock.json','04-quality-gate.json','05-voice-quality-gate.json','06-review-quality-gate.json','08-quality-gate.json','10-publication-compliance.json','research-coverage-review.json'].flatMap((name) => {
+      const artifact = articleRows.find((item) => item.name === name);
+      if (!artifact) return [];
+      const value = JSON.parse(fs.readFileSync(artifact.file_path, 'utf8'));
+      return [[name, { pass:value.pass, status:value.status, title:value.title, candidates:value.candidates, titleBlockers:value.titleBlockers, hotspotAnchor:value.hotspotAnchor, blockers:value.blockers, issues:value.issues, omitted_points:value.omitted_points }]];
+    }));
+    assert.equal(finalDocument.status, 'finalized', `终稿应通过所有自动门禁：${JSON.stringify({reviewIssues,gateDiagnostics})}\n${workbench.logs.join('')}`);
     assert.equal(path.resolve(finalDocument.file_path), path.resolve(finalArtifact.file_path));
     assert.ok(Number(finalDocument.visible_chars) > 0, '文章终稿应有可见字符');
     const finalArticles = await workbench.api('/api/articles');
@@ -172,8 +187,6 @@ test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务�
     assert.ok(replayIds.has('hotspot-tagging'), `打标 Replay 未命中：${[...replayIds].join(', ')}`);
     assert.ok(replayIds.has('event-card'), `事件卡 Replay 未命中：${[...replayIds].join(', ')}`);
     assert.ok(replayIds.has('discussion-research-report'), `单事件研判 Replay 未命中：${[...replayIds].join(', ')}`);
-    assert.ok(replayIds.has('hotspot-brainstorm'), `脑暴 Replay 未命中：${[...replayIds].join(', ')}`);
-    assert.ok(replayIds.has('hotspot-synthesis'), `综合复排 Replay 未命中：${[...replayIds].join(', ')}`);
     assert.ok([...replayIds].some((id) => id === 'article-markdown'), `文章 Replay 未命中：${[...replayIds].join(', ')}`);
     assert.ok(replayIds.has('article-voice-quality-gate'), `文章风格门禁 Replay 未命中：${[...replayIds].join(', ')}`);
     assert.ok(replayIds.has('social-card-editorial'), `图文故事板 Replay 未命中：${[...replayIds].join(', ')}`);
@@ -246,5 +259,6 @@ test('主链路 E2E：采集、文章与图文产物均可从真实 HTTP 服务�
       }
     }
     try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Windows may release SQLite handles shortly after the child exits. */ }
+    try { fs.rmSync(configRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* Windows may release SQLite handles shortly after the child exits. */ }
   }
 }, { timeout: 240000 });

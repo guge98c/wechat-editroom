@@ -2,7 +2,7 @@ import { applyWorkbenchSchema } from './workbench-schema.mjs';
 import { applyAgentHarnessSchema } from './agent-harness-schema.mjs';
 export { applyWorkbenchSchema };
 
-export const WORKBENCH_SCHEMA_VERSION = 45;
+export const WORKBENCH_SCHEMA_VERSION = 46;
 
 export function runDatabaseMigrations(db, migrateSchema) {
   if (!db || typeof db.exec !== 'function') throw new TypeError('数据库连接无效');
@@ -791,6 +791,80 @@ export function runDatabaseMigrations(db, migrateSchema) {
       CREATE INDEX IF NOT EXISTS idx_github_project_feedback_generated ON github_project_feedback_snapshots(generated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_github_project_feedback_status ON github_project_feedback_snapshots(status,id DESC);`);
       db.prepare('INSERT INTO schema_migrations(version,applied_at) VALUES(45,?)').run(new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  if (arguments.length < 2 && !db.prepare('SELECT 1 FROM schema_migrations WHERE version=46').get()) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const candidateColumns = new Set(db.prepare('PRAGMA table_info(candidates)').all().map((column) => column.name));
+      for (const [name, definition] of [
+        ['material_type', "TEXT NOT NULL DEFAULT ''"],
+        ['content_route', "TEXT NOT NULL DEFAULT 'article'"],
+        ['content_class', "TEXT NOT NULL DEFAULT 'news_event'"],
+        ['classification_status', "TEXT NOT NULL DEFAULT 'needs_review'"],
+        ['classification_confidence', 'REAL'],
+        ['classification_reason', "TEXT NOT NULL DEFAULT ''"],
+        ['classification_evidence_json', "TEXT NOT NULL DEFAULT '[]'"],
+        ['classification_features_json', "TEXT NOT NULL DEFAULT '{}'"],
+        ['article_eligible', 'INTEGER NOT NULL DEFAULT 1'],
+        ['article_eligibility_reason', "TEXT NOT NULL DEFAULT ''"],
+        ['editorial_category', "TEXT NOT NULL DEFAULT ''"],
+        ['article_route_approved', 'INTEGER NOT NULL DEFAULT 0'],
+        ['article_route_evidence_json', "TEXT NOT NULL DEFAULT '[]'"],
+      ]) {
+        if (!candidateColumns.has(name)) db.exec(`ALTER TABLE candidates ADD COLUMN ${name} ${definition}`);
+      }
+      db.exec(`UPDATE candidates SET material_type='repository'
+        WHERE content_class='github_project' OR hotspot_id IN (
+          SELECT id FROM hotspots WHERE lower(COALESCE(source_group,''))='github' OR lower(COALESCE(url,'')) LIKE 'https://github.com/%'
+        )`);
+      db.exec(`UPDATE candidates SET material_type='event' WHERE content_class IN ('open_source_technology','open_source_trend') AND material_type=''`);
+      db.exec(`UPDATE candidate_tracks SET output_mode=REPLACE(REPLACE(output_mode,'technology-cards','event-cards'),'trend-cards','event-cards')
+        WHERE output_mode LIKE '%technology-cards%' OR output_mode LIKE '%trend-cards%'`);
+      db.exec(`UPDATE candidates SET editorial_category=CASE
+        WHEN material_type='repository' THEN '开源项目与开发者生态'
+        WHEN editorial_category<>'' THEN editorial_category
+        WHEN content_class='open_source_technology' THEN '产品与技术动态'
+        WHEN content_class='open_source_trend' THEN '行业趋势与市场变化'
+        WHEN hotspot_id IN (SELECT id FROM hotspots WHERE category LIKE '%AI/技术动态%' OR category='产品与技术动态') THEN '产品与技术动态'
+        WHEN hotspot_id IN (SELECT id FROM hotspots WHERE category LIKE '%大厂战略%' OR category='大厂与商业战略') THEN '大厂与商业战略'
+        WHEN hotspot_id IN (SELECT id FROM hotspots WHERE category LIKE '%职场生态%' OR category='职场与组织变化') THEN '职场与组织变化'
+        WHEN hotspot_id IN (SELECT id FROM hotspots WHERE category LIKE '%行业趋势%' OR category='行业趋势与市场变化') THEN '行业趋势与市场变化'
+        WHEN hotspot_id IN (SELECT id FROM hotspots WHERE category='政策与公共议题') THEN '政策与公共议题'
+        ELSE '' END`);
+      db.exec(`UPDATE candidates SET article_eligible=0,content_route='social_only',article_eligibility_reason='GitHub 项目默认只进入项目内容流'
+        WHERE material_type='repository' AND article_route_approved=0`);
+      db.exec(`DELETE FROM candidate_tracks WHERE track='article' AND candidate_row_id IN
+        (SELECT id FROM candidates WHERE material_type='repository' AND article_route_approved=0)`);
+      for (const [table, names] of [
+        ['event_records', ['content_class','classification_confidence','classification_reason','classification_evidence_json','classification_features_json','classification_missing_evidence_json','article_eligible','social_eligible','default_route','classification_status']],
+      ]) {
+        const columns = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((column) => column.name));
+        for (const name of names) if (columns.has(name)) db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
+      }
+      db.prepare('INSERT INTO schema_migrations(version,applied_at) VALUES(46,?)').run(new Date().toISOString());
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  // Repair databases that already recorded v46, whose migration dropped
+  // candidate classification fields still used by the current repository.
+  if (arguments.length < 2) {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const candidateColumns = new Set(db.prepare('PRAGMA table_info(candidates)').all().map((column) => column.name));
+      for (const [name, definition] of [
+        ['content_class', "TEXT NOT NULL DEFAULT 'news_event'"],
+        ['classification_status', "TEXT NOT NULL DEFAULT 'needs_review'"],
+        ['classification_confidence', 'REAL'],
+        ['classification_reason', "TEXT NOT NULL DEFAULT ''"],
+        ['classification_evidence_json', "TEXT NOT NULL DEFAULT '[]'"],
+        ['classification_features_json', "TEXT NOT NULL DEFAULT '{}'"],
+        ['article_eligible', 'INTEGER NOT NULL DEFAULT 1'],
+        ['article_eligibility_reason', "TEXT NOT NULL DEFAULT ''"],
+      ]) {
+        if (!candidateColumns.has(name)) db.exec(`ALTER TABLE candidates ADD COLUMN ${name} ${definition}`);
+      }
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   }

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { G_SOCIAL_CLASS_CAPS, isFreshForBatch, clusterItems, preselection, selectSocialCandidates, selectSocialPool, buildHotspotAtlas, loadStableBatchEvents } from '../../../features/research/index.mjs';
+import { G_SOCIAL_MATERIAL_CAPS, isFreshForBatch, clusterItems, preselection, selectSocialCandidates, selectSocialPool, buildHotspotAtlas, loadStableBatchEvents } from '../../../features/research/index.mjs';
 import { EVENT_HEAT_RANKING_VERSION, buildEventHeatRanking, loadPreviousEventHeatItems, materializeStableEvents, isResearchEligibleHotspot } from '../../../features/research/index.mjs';
 import { buildBatchPipelineStatus } from '../../../features/batches/index.mjs';
 import { getBatchDeleteImpact, deleteBatchPermanently } from '../../../features/batches/index.mjs';
@@ -139,7 +139,7 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
       const tagged = eligible.filter((item) => { try { const tags = JSON.parse(item.raw_json || '{}').aiTags; return tags?.eventKey && tags?.preScores; } catch { return false; } });
       if (tagged.length) {
         const scored = selectSocialCandidates(preselection(loadStableBatchEvents({ workspaceRoot: root, batch, hotspots: tagged }), batch.batch_date), tagged.length, true);
-        const selectedKeys = new Set(selectSocialPool(scored, 10, G_SOCIAL_CLASS_CAPS).map((item) => item.eventId ?? item.hotspotId ?? item.title));
+        const selectedKeys = new Set(selectSocialPool(scored, 10, G_SOCIAL_MATERIAL_CAPS).map((item) => item.eventId ?? item.hotspotId ?? item.title));
         items = scored.map((item, index) => ({ ...item, socialRank: index + 1, selected: selectedKeys.has(item.eventId ?? item.hotspotId ?? item.title) }));
       }
     }
@@ -167,7 +167,7 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
     const file = path.join(batchWorkdir(batch), 'sources', 'event-heat-ranking.json');
     let ranking = null;
     try { ranking = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-    if (!ranking || !Array.isArray(ranking.items) || ranking.titleVersion !== 2 || ranking.scoringVersion !== EVENT_HEAT_RANKING_VERSION || ranking.scoringModels?.news_event !== 'T_account') {
+    if (!ranking || !Array.isArray(ranking.items) || ranking.titleVersion !== 2 || ranking.scoringVersion !== EVENT_HEAT_RANKING_VERSION) {
       const rankingHotspots = batch.hotspots.filter(isResearchEligibleHotspot).filter((item) => isFreshForBatch(item, batch.batch_date, batchMaxAgeHours(batch)));
       ranking = buildEventHeatRanking({ store, batch, events: loadStableBatchEvents({ workspaceRoot: root, batch, hotspots: rankingHotspots }), previousItems: loadPreviousEventHeatItems({ store, workspaceRoot: root, batch }) });
     }
@@ -183,7 +183,7 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
       const heatFile = path.join(batchWorkdir(batch), 'sources', 'event-heat-ranking.json');
       eventHeatRanking = fs.existsSync(heatFile) ? JSON.parse(fs.readFileSync(heatFile, 'utf8')) : null;
     } catch { eventHeatRanking = null; }
-    if (!eventHeatRanking || !Array.isArray(eventHeatRanking.items) || eventHeatRanking.titleVersion !== 2 || eventHeatRanking.scoringVersion !== EVENT_HEAT_RANKING_VERSION || eventHeatRanking.scoringModels?.news_event !== 'T_account') {
+    if (!eventHeatRanking || !Array.isArray(eventHeatRanking.items) || eventHeatRanking.titleVersion !== 2 || eventHeatRanking.scoringVersion !== EVENT_HEAT_RANKING_VERSION) {
       eventHeatRanking = buildEventHeatRanking({ store, batch, events: loadStableBatchEvents({ workspaceRoot: root, batch, hotspots: eligible }), previousItems: loadPreviousEventHeatItems({ store, workspaceRoot: root, batch }) });
     }
     const memberships = store.listEventHotspots?.({ batchId, limit: 100000 }) || [];
@@ -193,23 +193,10 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
       membershipsByEvent.get(membership.event_id).push(membership);
     }
     const recordsById = new Map((store.listEventRecords?.({ limit: 100000 }) || []).map((record) => [record.id, record]));
-    const classificationFromRecord = (record) => record?.content_class ? {
-      content_class: record.content_class,
-      confidence: record.classification_confidence,
-      status: record.classification_status || 'needs_review',
-      reason: record.classification_reason || '',
-      evidence: record.classification_evidence || [],
-      article_eligible: Boolean(record.article_eligible),
-      social_eligible: Boolean(record.social_eligible),
-      default_route: record.default_route || 'editorial_review',
-      missing_evidence: record.classification_missing_evidence || [],
-      features: record.classification_features || {},
-    } : null;
     const rawStableEvents = [...membershipsByEvent.entries()].map(([eventId, eventMemberships]) => {
       const record = recordsById.get(eventId) || {};
       return { event_id: eventId, title: record.title || '', normalized: record.normalized || {}, hotspot_ids: eventMemberships.map((item) => Number(item.hotspot_id)),
-        legacy_event_ids: record.legacy_ids || [], first_seen_at: record.first_seen_at || null, last_seen_at: record.last_seen_at || null,
-        classification: classificationFromRecord(record) };
+        legacy_event_ids: record.legacy_ids || [], first_seen_at: record.first_seen_at || null, last_seen_at: record.last_seen_at || null };
     });
     const heatByEvent = new Map((eventHeatRanking.items || []).map((item) => [item.eventId, item]));
     const rankingAliases = new Map();
@@ -245,17 +232,10 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
         if (heat) event.event_heat = { rank: heat.rank, heatScore: heat.heatScore, state: heat.state, rankDelta: heat.rankDelta };
       }
     }
-    const classificationByEvent = new Map(stableEvents.map((event) => [event.event_id, event.classification]).filter(([, classification]) => classification));
-    const withClassification = (item) => ({
-      ...item,
-      content_class: classificationByEvent.get(item.eventId)?.content_class || item.contentClass || null,
-      classification_status: classificationByEvent.get(item.eventId)?.status || null,
-      default_route: classificationByEvent.get(item.eventId)?.default_route || null,
-    });
-    atlas.eventHotlist = (eventHeatRanking.items || []).map(withClassification);
-    atlas.eventHeatRankings = Object.fromEntries(Object.entries(eventHeatRanking.rankings || {}).map(([contentClass, board]) => [contentClass, {
+    atlas.eventHotlist = (eventHeatRanking.items || []).map((item) => ({ ...item, editorial_category: item.editorialCategory || '' }));
+    atlas.eventHeatRankings = Object.fromEntries(Object.entries(eventHeatRanking.categoryRankings || {}).map(([category, board]) => [category, {
       ...board,
-      items: (board.items || []).map(withClassification),
+      items: (board.items || []).map((item) => ({ ...item, editorial_category: item.editorialCategory || '' })),
     }]));
     atlas.eventHotlistGeneratedAt = eventHeatRanking.generatedAt || null;
     try {
@@ -267,9 +247,7 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
           const card = cardMap.get(String(event.event_id));
           if (card) {
             event.card = { ...card, event_id: event.event_id };
-            event.classification = card.classification || event.classification || null;
           }
-          if (!event.classification && classificationByEvent.has(event.event_id)) event.classification = classificationByEvent.get(event.event_id);
         }
         for (const node of atlas.graph?.nodes || []) if (node.type === 'event') { const card = cardMap.get(String(node.id).replace(/^event:/, '')); if (card?.conclusion) node.summary = card.conclusion; }
       }

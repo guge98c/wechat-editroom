@@ -118,7 +118,7 @@ test('阶段2事件池按 T 排序，账号契合不再叠加到事件分', () =
     hotspot(1, '匹配事件', '主体1|发布|模型'),
     hotspot(2, '非匹配事件', '主体2|发布|模型'),
   ]);
-  clusters[1].topic_category = '💼 职场生态';
+  clusters[1].topic_category = '职场与组织变化';
   const ranking = preselection(clusters).map((item, index) => ({ ...item,
     eventHeatRank: index + 1, eventHeatScore: 80, eventValue: 80, eventHeatState: 'new_event',
   }));
@@ -149,7 +149,7 @@ test('维度组从文章池拆到早报候选池', () => {
 test('账号契合：命中内容支柱类目的维度组获得加分', () => {
   const accountContext={contentPillars:['AI 行业热点：技术动态与战略观察']};
   const focused=focusedCategories(accountContext);
-  assert.ok(focused.has('🤖 AI/技术动态') || focused.has('🏢 大厂战略'));
+  assert.ok(focused.has('产品与技术动态') || focused.has('大厂与商业战略'));
   const clusters=clusterItems([
     hotspot(1,'AI 事件','openai|发布模型'),
     hotspot(2,'AI 事件二','anthropic|发布模型'),
@@ -161,7 +161,7 @@ test('账号契合：命中内容支柱类目的维度组获得加分', () => {
 });
 
 test('T/J/A/C/F由服务端公式计算', () => {
-  const source={candidateId:'C001',title:'事件',category:'🤖 AI/技术动态',poolRole:'核心8条',credibleScoop:0,riskLevel:'低'};
+  const source={candidateId:'C001',title:'事件',category:'产品与技术动态',poolRole:'核心8条',credibleScoop:0,riskLevel:'低'};
   const cards=[{candidateId:'C001',status:'PASS',source,bScores:{angleUniqueness:4,emotionSpread:4,titleHook:4,audienceRelevance:4,factSupport:4},
     hProfile:{historicalType:'bigtech',fiveSenseCount:4,fiveQuestionCount:3,recommendationFit:6,emotionTheme:4,searchFriendly:3}}];
   const result=scoreCards(cards,{items:[{candidateId:'C001',saturationPenalty:5,duplicatePenalty:2,audienceRelevance:4,reason:'测试'}]})[0];
@@ -290,27 +290,27 @@ test('通知池按最终分最多保留两条，非法推荐技能回退到可�
   assert.ok(scored.every((item)=>item.recommendedSkill==='wechat-mp-tech-hotspot'));
 });
 
-test('图文推荐优先采用模型贴图建议并识别工具类候选', () => {
+test('图文推荐基于 GitHub 来源识别工具类候选', () => {
   const safe = { status:'PASS', writeReadiness:'READY_PUBLIC_ANALYSIS', source:{ riskLevel:'低' } };
-  assert.equal(isSocialCardCandidate({ ...safe, format:'贴图', hProfile:{ historicalType:'bigtech' } }), true);
-  assert.equal(isSocialCardCandidate({ ...safe, format:'文章', hProfile:{ historicalType:'github_tool' } }), true);
+  assert.equal(isSocialCardCandidate({ ...safe, articles:[{url:'https://github.com/acme/tool'}] }), true);
+  assert.equal(isSocialCardCandidate({ ...safe, articles:[{url:'https://example.com/news'}] }), false);
   assert.equal(isSocialCardCandidate({ ...safe, format:'文章', hProfile:{ historicalType:'bigtech' }, materialType:'行业新闻' }), false);
   assert.equal(isSocialCardCandidate({ ...safe, format:'贴图', source:{ riskLevel:'高' } }), false);
 });
 
-test('纯项目按内容路线进入图文，评分字段可识别为项目属性', () => {
-  assert.equal(classifyContentRoute({ format:'贴图', hProfile:{ historicalType:'bigtech' } }).contentRoute, 'social_only');
-  assert.equal(classifyContentRoute({ format:'文章', hProfile:{ historicalType:'github_tool' } }).articleEligible, false);
-  assert.equal(classifyContentRoute({ format:'文章', hProfile:{ historicalType:'bigtech' }, materialType:'GitHub 工具项目' }).contentRoute, 'social_only');
-  assert.equal(classifyContentRoute({ format:'文章', hProfile:{ historicalType:'bigtech' }, materialType:'行业新闻' }).contentRoute, 'article');
-  assert.equal(isPureProjectEvent({ representative_title:'某开源项目发布', keywords:[], articles:[] }), true);
+test('纯项目按 GitHub 来源进入图文路线', () => {
+  const repository = { articles:[{url:'https://github.com/acme/tool'}] };
+  assert.equal(classifyContentRoute(repository).contentRoute, 'social_only');
+  assert.equal(classifyContentRoute(repository).articleEligible, false);
+  assert.equal(classifyContentRoute({ articles:[{url:'https://example.com/news'}] }).contentRoute, 'article');
+  assert.equal(isPureProjectEvent(repository), true);
 });
 
-test('稳定事件分类优先于旧 format/materialType 路由字段', () => {
-  const news = classifyContentRoute({ contentClass: 'news_event', format: '贴图', materialType: 'GitHub 工具项目' });
+test('内容路由根据报道来源区分项目和新闻', () => {
+  const news = classifyContentRoute({ contentClass: 'news_event', format: '贴图', articles:[{url:'https://example.com/news'}] });
   assert.equal(news.contentRoute, 'article');
   assert.equal(news.pureProject, false);
-  const project = classifyContentRoute({ contentClass: 'github_project', format: '文章', materialType: '行业新闻' });
+  const project = classifyContentRoute({ contentClass: 'github_project', format: '文章', articles:[{url:'https://github.com/acme/tool'}] });
   assert.equal(project.contentRoute, 'social_only');
   assert.equal(project.articleEligible, false);
 });
@@ -329,6 +329,7 @@ test('缺少事件价值时不再把综合选题静默算成 0 分', () => {
 
 test('纯项目不再被文章池的工具席位强行补入', () => {
   const events=clusterItems([hotspot(1,'开源项目发布','主体|发布|开源项目')]);
+  events[0].contentClass='github_project';
   const ranking=preselection(events,'2026-07-23');
   const pool=selectArticlePool(events,ranking,{coreLimit:1,blackLimit:0,backupLimit:0,accountContext:{contentPillars:[],scoring:{minimumToolCandidates:2}}});
   assert.equal(pool.selected.length,0);
@@ -601,7 +602,7 @@ test('选题报告合并维度候选一节', () => {
 });
 
 test('评分权重可通过 scoring 配置覆盖', () => {
-  const source={candidateId:'C001',title:'事件',category:'🤖 AI/技术动态',poolRole:'核心8条',credibleScoop:0,riskLevel:'低'};
+  const source={candidateId:'C001',title:'事件',category:'产品与技术动态',poolRole:'核心8条',credibleScoop:0,riskLevel:'低'};
   const cards=[{candidateId:'C001',status:'PASS',source,bScores:{angleUniqueness:4,emotionSpread:4,titleHook:4,audienceRelevance:4,factSupport:4},
     hProfile:{historicalType:'bigtech',fiveSenseCount:4,fiveQuestionCount:3,recommendationFit:6,emotionTheme:4,searchFriendly:3}}];
   const synthesis={items:[{candidateId:'C001',saturationPenalty:5,duplicatePenalty:2,audienceRelevance:4,reason:'测试'}]};
@@ -615,14 +616,14 @@ test('评分权重可通过 scoring 配置覆盖', () => {
 });
 
 test('scoring 覆盖分类偏好与账号契合加分，非法值回退默认', () => {
-  const scoring=resolveScoring({scoring:{categoryPreference:{'📰 综合资讯':-8},accountFitBonus:12,weights:{h:'abc'}}});
-  assert.equal(scoring.categoryPreference['📰 综合资讯'],-8);
-  assert.equal(scoring.categoryPreference['🏢 大厂战略'],6);
+  const scoring=resolveScoring({scoring:{categoryPreference:{'产品与技术动态':-8},accountFitBonus:12,weights:{h:'abc'}}});
+  assert.equal(scoring.categoryPreference['产品与技术动态'],-8);
+  assert.equal(scoring.categoryPreference['大厂与商业战略'],4);
   assert.equal(scoring.accountFitBonus,12);
   assert.equal(scoring.weights.h,0.6);
   const events=clusterItems([hotspot(1,'A报道','主体|发布|模型')]);
   const ranking=preselection(events,'2026-07-23',scoring);
-  assert.equal(ranking[0].categoryPreference,4);
+  assert.equal(ranking[0].categoryPreference,-8);
   const pool=selectDimensionPool(events,ranking,{accountContext:{contentPillars:['AI 行业热点：x'],scoring:{accountFitBonus:12}}});
   assert.equal(pool.groups.find((g)=>g.accountFit>0).accountFit,12);
   assert.equal(resolveScoring({scoring:{eventValueWeight:0.2}}).eventValueWeight,0.25);

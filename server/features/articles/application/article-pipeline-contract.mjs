@@ -202,7 +202,7 @@ export function selectWriterSkill(candidate={}) {
   const deepIntent=/原理|机制拆解|架构拆解|技术拆解|性能拆解|成本拆解|成本测算|算一笔账|可复算|公式|吞吐|延迟|显存|算力成本|部署成本|推理成本|训练成本|量化|内核|技术路线|比较口径|基准测试/.test(angleText);
   const technicalSubject=/AI|模型|芯片|GPU|推理|训练|Token|MoE|Attention|Agent|数据库|框架|协议|算法|开源|性能|算力|架构|内核/i.test(allText);
   if(deepIntent&&technicalSubject)return {skill:'wechat-mp-tech-deep',reason:'命题要求解释技术机制，或对性能、成本和指标进行可复算拆解'};
-  if(candidate.category==='🤖 AI/技术动态'||technicalSubject)return {skill:'wechat-mp-tech-hotspot',reason:'主题属于技术、产品或行业动态，重点是事件影响而非完整原理推导'};
+  if(['🤖 AI/技术动态', '产品与技术动态'].includes(candidate.category)||technicalSubject)return {skill:'wechat-mp-tech-hotspot',reason:'主题属于技术、产品或行业动态，重点是事件影响而非完整原理推导'};
   return {skill:'wechat-mp-deep-dive',reason:'主题需要从参与方、利益关系、因果链与反方边界展开'};
 }
 

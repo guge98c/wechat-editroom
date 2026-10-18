@@ -72,7 +72,7 @@ async function loadCandidates() {
   const ready = candidates.filter((c) => finalIds.has(c.id));
   // 早报与排版页同一约定：批次级 daily-final 文档拼成伪候选 daily（参考 editor.js/preview.js）
   const dailyFinal = documents.find((d) => d.kind === "daily-final" && d.candidate_row_id == null);
-  if (dailyFinal) ready.unshift({ id: "daily", candidate_id: "早报", hotspot_title: dailyFinal.title || "批次早报", category: "📰 综合资讯", daily: true });
+  if (dailyFinal) ready.unshift({ id: "daily", candidate_id: "早报", hotspot_title: dailyFinal.title || "批次早报", category: "批次早报", daily: true });
   const preferredId = state.coverCandidateId;
   const preferred = ready.find((c) => String(c.id) === String(preferredId)) || (preferredId ? null : ready[0]) || null;
   if (preferredId && !preferred) toast("该文章没有可生成封面的终稿，请先在成稿链产出 09-FINAL.md");

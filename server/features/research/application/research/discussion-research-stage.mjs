@@ -311,7 +311,7 @@ function compactEvent(event, scopeItem, store, searchEvidence = [], { includeCon
     latest_time: text(event?.latest_time, 60),
     event_value: scopeItem?.event_value ?? event?.eventValue ?? event?.t ?? null,
     event_rank: scopeItem?.board_rank ?? event?.eventHeatRank ?? null,
-    event_content_class: scopeItem?.content_class || event?.classification?.content_class || event?.classification?.contentClass || null,
+    editorial_category: scopeItem?.editorial_category || scopeItem?.editorialCategory || event?.topic_category || null,
     selection_rank: scopeItem?.selection_rank ?? scopeItem?.rank ?? null,
     event_parts: dimensionPartsOf(event),
     event_card: compactCard(event?.card),
@@ -608,7 +608,7 @@ const PHASE_INSTRUCTIONS = {
   inter_event: '现在只执行第 2 阶段（2A）：事件间研判假设。批次内关系只能在 candidate_pairs 或 candidate_groups 中判断，不能自行把关键词相同当成关系；外部关系发现可以使用 external_anchor_events 作为单事件锚点。先使用一次模型原生联网搜索，合并查询并控制在不超过 5 个查询；搜索返回后立即停止搜索并输出 JSON。允许搜索探索 Top-K 锚点的外部关系：同一主体的不同动作、近似主体的同一动作、同一对象的不同策略、不同动作的结果反差，以及趋势样本和反例样本。联网发现只能帮助提出更可靠的关系假设和搜索线索，不能直接形成已确认关系；外部事件必须先作为待验证 reference event。请提出前后、回应、对比、趋势、反例假设，并为需要外部求证的关系输出 search_tasks。只输出 {"relations":[],"search_tasks":[]}。search_tasks 必须绑定 Top-K 锚点事件和 candidate pair/group 或 external anchor；外部关系发现必须填写 relation_axis，可用 same_subject_different_action、similar_subject_same_action、same_object_different_strategy、contrasting_action_or_outcome、same_occasion_comparison、trend_sample、counterexample_sample。',
   internal_verify: '现在执行第 1B 阶段：先使用一次模型原生联网搜索，合并查询并控制在不超过 5 个查询；搜索返回后立即停止搜索并输出 JSON。直接验证或修正事件内研判假设。输入中只有一个事件、假设和定向搜索任务；不得引入其他事件。不要抓取整篇正文，只使用联网搜索返回的公开摘要和引用。对每条反常必须说明 expected、observed、gap；对利益冲突必须说明 parties、issue、difference；发散方向必须说明 baseline、impact 和待验证问题。每条保留的信号必须引用 evidence_sources 中的 source_id。只有来源足以支持才标记 supported；不成立返回 rejected；摘要不足以确定时保留 needs_review。evidence_sources 必须返回 source_id、url、title、excerpt。只输出 {"items":[{"event_id":"...","anomalies":[],"interest_conflicts":[],"divergence_directions":[]}],"evidence_sources":[]}。',
   inter_event_verify: '现在执行第 2B 阶段：先使用一次模型原生联网搜索，合并查询并控制在不超过 5 个查询；搜索返回后立即停止搜索并输出 JSON。直接验证或修正事件间研判假设。只能处理输入中的 candidate_pairs、candidate_groups 和 external_reference_events。不要抓取整篇正文，只使用联网搜索返回的公开摘要和引用。外部参考事件可以作为关系端点，但必须通过 reference_event_ids 绑定；不得把它变成 Top-K 事件。关系类型只能是 sequence、response、comparison、trend、counterexample；comparison 必须给出具体 differences 或 comparison_basis；trend 必须有至少 3 个独立事件；counterexample 必须说明 refutes。关系不成立返回 rejected，摘要不足返回 needs_review。每条保留的关系都必须给出 insight、writing_angles、thesis_seeds 和 source_ids，并在 evidence_sources 中返回对应 source_id、url、title、excerpt。只输出 {"relations":[],"evidence_sources":[]}。',
-  topic_generation: '现在只执行第 3 阶段：候选选题生成。只能使用输入中的 research_digest、events 和 external_reference_events；research_digest 是经过程序压缩的研判报告、内部信号、事件关系和研判素材索引，完整来源不在本轮输入中。model_reported/needs_review 是模型联网研判素材，可以形成候选，但必须在候选中保留待核边界，不能把它写成已核实事实。不能重新联网、重新发明事件关系、把事件摘要改写成标题，或把 external_reference_events 当成独立事实事件。请直接从 research_digest 提炼可讨论的命题：可以来自事件内反常、利益/成本/责任冲突、可发散方向，也可以来自事件间前后、回应、对比、趋势、反例关系；重点是问题、解释、影响和观点，不是新闻复述。每个候选必须包含 candidate_title、event_ids、core_question、angle、thesis_seed、research_status 六个字段；单事件也必须使用 event_ids 数组，不能使用 event_id。candidate_title 是文章选题标题，不是事件原始标题，必须明确讨论对象和问题。event_ids 只能填写输入中已有的事件 ID。research_status 只能是 verified 或 needs_review；使用 summary_only 或 model_reported 素材时必须是 needs_review，并在标题、问题或命题中使用待验证、可能、是否等限定表达。material_ids、internal_signal_refs、relation_ids、evidence_source_ids 均为可选字段，填写错误或缺失不得导致候选被丢弃。请同时返回 event_coverage，逐一覆盖输入中的每个 event_id，不能遗漏；status 只能是 covered 或 uncovered。covered 时填写 candidate_indexes（对应 topic_candidates 中从 1 开始的顺序，可多个事件指向同一个候选），uncovered 时用一句话填写 reason，说明为什么没有形成文章选题。覆盖清单只是审计信息，不要为了覆盖而编造低质量候选。至少生成 1 条有效候选；没有足够依据时返回空数组。严格按照以下格式输出，不要输出解释、前置进度文本或 Markdown：{"topic_candidates":[{"candidate_title":"追觅一年造车归零：高调跨界为何被快速清算？","event_ids":["S_EVENT_001"],"core_question":"一家扫地机器人公司为何在官宣造车后快速收缩？","angle":"从战略承诺、执行投入与对外回应的落差切入","thesis_seed":"跨界失败的关键不只是项目终止，而是高调承诺与真实投入之间的责任落差","research_status":"needs_review","relation_ids":[],"internal_signal_refs":[],"material_ids":[],"evidence_source_ids":[]}],"event_coverage":[{"event_id":"S_EVENT_001","status":"covered","candidate_indexes":[1],"reason":""}]}.',
+  topic_generation: '现在只执行第 3 阶段：候选选题生成。只能使用输入中的 research_digest、events 和 external_reference_events；research_digest 是经过程序压缩的研判报告、内部信号、事件关系和研判素材索引，完整来源不在本轮输入中。model_reported/needs_review 是模型联网研判素材，可以形成候选，但必须在候选中保留待核边界，不能把它写成已核实事实。不能重新联网、重新发明事件关系、把事件摘要改写成标题，或把 external_reference_events 当成独立事实事件。请直接从 research_digest 提炼可讨论的命题：可以来自事件内反常、利益/成本/责任冲突、可发散方向，也可以来自事件间前后、回应、对比、趋势、反例关系；重点是读者为什么现在要点开、读完能得到什么，而不只是提出值得讨论的问题。候选标题必须让目标读者一眼看懂事件主体/热点话题和具体变化，优先保留来源中已有的公司、产品、人名或事件名；再用价格、结果、冲突、反常或实际影响形成入口。不要为了点击夸大结论或制造来源不支持的数字。每个候选必须包含 candidate_title、event_ids、core_question、angle、thesis_seed、target_reader、click_reason、title_hook、reader_payoff、reader_entry_score、research_status。target_reader 写具体人群；click_reason 写他们现在会点开的理由；title_hook 填一个来源中已有的、且会原样出现在 candidate_title 里的热点主体或具体话题锚点；reader_payoff 写读完后的判断、收益或行动依据；reader_entry_score 按主体/话题清晰度、点击理由、目标人群相关性、读者回报四项各 0–5 分合计（0–20）。单事件也必须使用 event_ids 数组，不能使用 event_id。event_ids 只能填写输入中已有的事件 ID。research_status 只能是 verified 或 needs_review；使用 summary_only 或 model_reported 素材时必须是 needs_review，并在标题、问题或命题中使用待验证、可能、是否等限定表达。material_ids、internal_signal_refs、relation_ids、evidence_source_ids 均为可选字段，填写错误或缺失不得导致候选被丢弃。请同时返回 event_coverage，逐一覆盖输入中的每个 event_id，不能遗漏；status 只能是 covered 或 uncovered。covered 时填写 candidate_indexes（对应 topic_candidates 中从 1 开始的顺序，可多个事件指向同一个候选），uncovered 时用一句话填写 reason，说明为什么没有形成文章选题。覆盖清单只是审计信息，不要为了覆盖而编造低质量候选。至少生成 1 条有效候选；没有足够依据时返回空数组。严格按照以下格式输出，不要输出解释、前置进度文本或 Markdown：{"topic_candidates":[{"candidate_title":"Cursor把Pro订阅打包进X套餐：开发者每月能省多少，又会失去什么？","event_ids":["S_EVENT_001"],"core_question":"这次套餐重组能为开发者节省多少成本，又增加了哪些用量或迁移限制？","angle":"从标价、共享用量与额外计费入口切入","thesis_seed":"名义折扣只有在读者实际使用的产品和用量结构相符时才转化为真实节省","target_reader":"正在选择AI编程订阅的开发者","click_reason":"套餐把熟悉的工具和价格放在一起，读者可以立刻判断自己是否省钱","title_hook":"Cursor","reader_payoff":"读者能按自己的使用结构判断是否迁移，以及要检查哪些额外费用","reader_entry_score":16,"research_status":"needs_review","relation_ids":[],"internal_signal_refs":[],"material_ids":[],"evidence_source_ids":[]}],"event_coverage":[{"event_id":"S_EVENT_001","status":"covered","candidate_indexes":[1],"reason":""}]}.',
   all: '',
 };
 
@@ -944,6 +944,12 @@ function normalizeTopic(raw, selectedIds, allSources, allowedRelations, index, a
   const coreQuestion = text(raw?.core_question || raw?.discussion_question, 500);
   const angle = text(raw?.angle, 500);
   const thesis = text(raw?.thesis_seed || raw?.thesis, 500);
+  const targetReader = text(raw?.target_reader, 180);
+  const clickReason = text(raw?.click_reason, 240);
+  const titleHook = text(raw?.title_hook, 240);
+  const readerPayoff = text(raw?.reader_payoff, 240);
+  const parsedReaderEntryScore = Number(raw?.reader_entry_score);
+  const readerEntryScore = Number.isFinite(parsedReaderEntryScore) ? Math.max(0, Math.min(20, parsedReaderEntryScore)) : 0;
   const signalRefs = list(raw?.internal_signal_refs || raw?.signal_refs).map((item) => typeof item === 'object' ? item.signal_id || item.id : item).map((item) => text(item, 160)).filter((item) => allowedSignals.has(item)).slice(0, 8);
   const materialIds = list(raw?.material_ids || raw?.research_material_ids).map((item) => typeof item === 'object' ? item.material_id || item.id : item).map((item) => text(item, 180)).filter((item) => allowedMaterials.has(item)).slice(0, 8);
   const sourceIds = [...new Set([
@@ -974,6 +980,11 @@ function normalizeTopic(raw, selectedIds, allSources, allowedRelations, index, a
     core_question: coreQuestion,
     angle,
     thesis_seed: thesis,
+    target_reader: targetReader,
+    click_reason: clickReason,
+    title_hook: titleHook,
+    reader_payoff: readerPayoff,
+    reader_entry_score: readerEntryScore,
     confidence: ['high', 'medium', 'low'].includes(raw?.confidence) ? raw.confidence : 'medium',
     evidence_source_ids: sourceIds,
     evidence_levels: evidenceLevels,
@@ -1935,9 +1946,10 @@ export async function generateDiscussionResearchTopics({ gateway, store, events 
         ...baseReport.scope,
         selected_count: repairScopeItems.length,
         items: repairScopeItems,
-        content_class_counts: repairScopeItems.reduce((counts, item) => {
-          const contentClass = String(item.content_class || 'news_event');
-          counts[contentClass] = (counts[contentClass] || 0) + 1;
+        category_counts: repairScopeItems.reduce((counts, item) => {
+          const category = String(item.editorial_category || '');
+          if (!category) return counts;
+          counts[category] = (counts[category] || 0) + 1;
           return counts;
         }, {}),
       },

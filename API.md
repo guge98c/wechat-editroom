@@ -327,8 +327,7 @@ curl.exe -X POST http://127.0.0.1:4317/api/system/backup/restore ^
 
 ### POST /api/batches/:id/candidates/composite
 创建综合选题 { hotspotIds, title, poolRole }
-tracks 含 social_cards 时按内容分流：含 GitHub 仓库 → wechat-tool-cards（工具图文）；纯新闻事件 → wechat-event-cards（事件图文，事实基座由事件卡+来源快照合成，见 server/domain/event-fact-base.mjs）
-也可按事件卡 `content_class` 分流：`github_project` → 工具图文，`news_event` → 事件图文，`open_source_technology` → 开源技术图文，`open_source_trend` → 开源趋势图文；分类快照写入候选，已锁定候选不被自动改路由。
+tracks 含 social_cards 时按素材类型 `material_type` 分流：`repository` → GitHub 项目图文，`event` → 事件图文（事实基座由事件卡+来源快照合成），`custom` → 自定义图文。文章榜单分为产品与技术动态、大厂与商业战略、职场与组织变化、开源项目与开发者生态、行业趋势与市场变化、政策与公共议题六类；GitHub 项目默认只进入独立项目发现/图文路线，不进入文章选题池。
 → 热点全景（事件卡片 → 创建综合选题）
 
 ### POST /api/batches/:id/custom-social-chat/stream
@@ -439,7 +438,7 @@ URL 规范化为裸仓库地址（https://github.com/owner/repo）；经手工�
 → 编辑室（确认简报）
 
 ### POST /api/candidates/:id/promote-article
-人工将开源项目候选晋级文章路线。请求体：`{ contentClass: "open_source_technology"|"open_source_trend", reason, evidence: [{ claim, role, sourceId }], features? }`；必须提供分类理由和至少一条可核验证据，晋级后仍需通过事实基座门禁。
+人工将 GitHub 项目候选晋级文章路线。请求体：`{ reason, evidence: [{ claim, role, sourceId }] }`；必须提供编辑理由和至少一条可核验证据，晋级后仍需通过通用文章事实门禁。
 → 选题池（人工晋级）
 
 ### POST /api/candidates/:id/source

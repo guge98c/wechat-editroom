@@ -433,7 +433,7 @@ export class ContentPlanningRepository {
     return this.db.prepare(`SELECT mm.id AS match_id,mm.status AS match_status,mm.confidence,mm.match_method,mm.content_type,
       aa.id AS article_artifact_id,aa.title AS artifact_title,aa.article_date,aa.artifact_type,aa.file_path,
       wm.id AS metric_id,wm.import_batch_id,wm.title AS metric_title,wm.published_date,wm.reads,wm.shares,wm.follows_after_read,wm.content_url,
-      c.id AS candidate_row_id,c.content_class,c.classification_features_json,
+      c.id AS candidate_row_id,c.material_type,c.editorial_category,
       h.title AS hotspot_title,h.url AS hotspot_url,h.source AS hotspot_source,h.source_group AS hotspot_source_group,h.raw_json AS hotspot_raw_json
       FROM wechat_article_metric_matches mm
       JOIN wechat_article_metrics wm ON wm.id=mm.metric_id
@@ -443,7 +443,7 @@ export class ContentPlanningRepository {
       LEFT JOIN hotspots h ON h.id=c.hotspot_id
       WHERE mm.status IN ('confirmed','auto_confirmed')
         AND (mm.content_type='social' OR aa.artifact_type='图文发布文案')
-        AND (c.content_class='github_project' OR h.source_group='github' OR lower(COALESCE(h.url,'')) LIKE 'https://github.com/%')
+        AND (c.material_type='repository' OR h.source_group='github' OR lower(COALESCE(h.url,'')) LIKE 'https://github.com/%')
       ORDER BY wm.published_date DESC,wm.id DESC LIMIT ?`).all(Math.min(Math.max(Number(limit) || 1000, 1), 2000));
   }
   listWechatMatchArtifacts() {

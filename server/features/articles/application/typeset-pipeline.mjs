@@ -101,13 +101,13 @@ export async function runTypesetPipeline({ gateway, store, batchId, candidateId,
   if (theme === 'auto' || !theme) {
     themeRouting = await resolveAutoTheme({
       gateway, provider, store, batchId, candidateId, target: 'article',
-      context: daily ? { title: '批次早报', category: '📰 综合资讯', contentType: 'daily' } : {
+      context: daily ? { title: '批次早报', category: '批次早报', contentType: 'daily' } : {
         title: candidate?.hotspot_title, category: candidate?.category, angle: candidate?.angle,
         thesis: candidate?.thesis, contentType: candidate?.content_route || 'article', composite: Boolean(candidate?.composite),
       },
       log: onProgress,
     });
-    theme = themeRouting?.themeId || defaultTypesetTheme(daily ? { category: '📰 综合资讯' } : candidate);
+    theme = themeRouting?.themeId || defaultTypesetTheme(daily ? { daily: true } : candidate);
   }
   const themeDefinition=resolveWorkspaceTheme(store,theme,'article')||articleThemeDefinition(theme,{fallback:false});
   if (!themeDefinition) throw new Error(`未知排版主题：${theme}（可选：auto、${Object.keys(TYPESET_THEMES).join('、')}）`);

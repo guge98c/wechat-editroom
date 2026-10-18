@@ -46,8 +46,6 @@ function coverSupportMarkup(page, coverSupport) {
 
 function pageBrand({ contentType, channelMode, sourceLabel, repository, topic }) {
   if (contentType === 'event') return channelMode === 'xiaohongshu' ? `小红书 · ${sourceLabel || topic}` : `EVENT DESK / ${sourceLabel || topic}`;
-  if (contentType === 'technology') return channelMode === 'xiaohongshu' ? `小红书 · ${sourceLabel || topic}` : `OPEN SOURCE TECH / ${sourceLabel || topic}`;
-  if (contentType === 'trend') return channelMode === 'xiaohongshu' ? `小红书 · ${sourceLabel || topic}` : `OPEN SOURCE TREND / ${sourceLabel || topic}`;
   if (contentType === 'custom') return channelMode === 'xiaohongshu' ? `小红书 · ${sourceLabel || topic}` : `CUSTOM / ${sourceLabel || topic}`;
   return channelMode === 'xiaohongshu' ? `小红书 · ${repository || topic}` : `OPEN SOURCE / ${repository || topic}`;
 }
@@ -84,7 +82,7 @@ export function renderStoryboardSections({
     const evidence = (Array.isArray(page.evidence) ? page.evidence : []).map((item) => `<li>${renderTechnicalText(item)}</li>`).join('');
     const blocks = pageBlocks.map((block) => renderStoryboardBlock(block, { pageLayout, pageRole: compositionDecision.role })).join('');
     const labels = PAGE_LABELS[contentType] || PAGE_LABELS.repository;
-    const label = labels[page.kind] || (contentType === 'event' ? 'EVENT CARD' : contentType === 'technology' ? 'TECH CARD' : contentType === 'trend' ? 'TREND CARD' : contentType === 'custom' ? 'CUSTOM CARD' : 'TOOL CARD');
+    const label = labels[page.kind] || (contentType === 'event' ? 'EVENT CARD' : contentType === 'custom' ? 'CUSTOM CARD' : 'TOOL CARD');
     const brand = pageBrand({ contentType, channelMode, sourceLabel, repository, topic });
     const footer = disclosure || (['event','technology','trend'].includes(contentType) ? '据公开素材整理 · 未核实内容已标注' : contentType === 'custom' ? '内容整理自作者素材 · 建议性内容未实测' : '基于项目文档整理 · 未实际运行');
     const densityAdjustment = selectedForPage(expandedDensityPages, index) ? 'expanded' : selectedForPage(relaxedDensityPages, index) ? 'relaxed' : 'none';

@@ -19,8 +19,6 @@ function selected(selection, index) {
 function pageBrand({ contentType, channelMode, sourceLabel, repository, topic }) {
   const source = sourceLabel || repository || topic;
   if (contentType === 'event') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `EVENT DESK / ${source}`;
-  if (contentType === 'technology') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `TECH DESK / ${source}`;
-  if (contentType === 'trend') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `TREND DESK / ${source}`;
   if (contentType === 'custom') return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `CUSTOM / ${source}`;
   return channelMode === 'xiaohongshu' ? `小红书 · ${source}` : `OPEN SOURCE / ${source}`;
 }
@@ -66,7 +64,7 @@ export function renderNeonStoryboardSections({
     const densityAdjustment = selected(expandedDensityPages, index) ? 'expanded' : selected(relaxedDensityPages, index) ? 'relaxed' : 'none';
     const label = labels[role] || (pageKind === 'ending' ? 'NEXT / MOVE' : 'TOOL / CARD');
     const brand = pageBrand({ contentType, channelMode, sourceLabel, repository, topic });
-    const footer = disclosure || (contentType === 'event' ? '据公开素材整理 · 未核实内容已标注' : contentType === 'technology' ? '据开源技术资料整理 · 机制与性能以来源为准' : contentType === 'trend' ? '据公开开源信号整理 · 趋势判断不等同于事实' : contentType === 'custom' ? '内容整理自作者素材 · 建议性内容未实测' : '基于项目文档整理 · 未实际运行');
+    const footer = disclosure || (contentType === 'event' ? '据公开素材整理 · 未核实内容已标注' : contentType === 'custom' ? '内容整理自作者素材 · 建议性内容未实测' : '基于项目文档整理 · 未实际运行');
     const defaultTemplateId = ({ cover: 'hero-metrics', concept: 'problem-stack', feature: 'feature-stack', steps: 'steps-rail', data: 'metric-board', compare: 'comparison-board', evidence: 'evidence-ledger', timeline: 'timeline-rail', risk: 'risk-frame', ending: 'closing-cta' }[role] || 'problem-stack');
     const requestedTemplateId = String(page.layout_intent || '').trim();
     const templateId = NEON_TEMPLATE_IDS.has(requestedTemplateId) ? requestedTemplateId : defaultTemplateId;

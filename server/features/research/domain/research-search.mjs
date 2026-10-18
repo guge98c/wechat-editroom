@@ -78,7 +78,7 @@ export function buildResearchSearchBaseline({ batchId = '', scope = {}, generate
       name: 'discussion_top_k',
       event_ids: eventIds,
       event_count: eventIds.length,
-      excluded_content_classes: ['github_project'],
+      excluded_material_types: ['repository'],
     },
     policy: {
       ...RESEARCH_SEARCH_POLICY,

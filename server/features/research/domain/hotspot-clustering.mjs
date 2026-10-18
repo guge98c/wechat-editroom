@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
-
-const CATEGORIES = ['🤖 AI/技术动态', '📰 综合资讯', '🏢 大厂战略', '📈 行业趋势', '💼 职场生态'];
+import { normalizeEditorialCategory } from './editorial-categories.mjs';
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number(value) || 0));
@@ -116,7 +115,7 @@ export function clusterItems(items = []) {
       china_relevance_score: clamp(lead.tags.chinaRelevance, 0, 12),
       china_relevance_reason: lead.tags.relevanceReason || '模型未提供具体理由，需编辑核验',
       global_exception: Boolean(lead.tags.globalException),
-      topic_category: CATEGORIES.includes(lead.item.category) ? lead.item.category : '📰 综合资讯',
+      topic_category: normalizeEditorialCategory(lead.item.category, { repository: Boolean(repositoryMember) }),
       keywords: [...new Set(members.flatMap((member) => member.tags.keywords || []))].slice(0, 8),
       source_count: new Set(provenances.map((source) => source.source)).size,
       report_count: members.length,

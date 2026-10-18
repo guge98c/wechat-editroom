@@ -1,5 +1,7 @@
 # 按内容分类分流 Social 图文故事板技术方案
 
+状态：已由 [六类编辑榜单与素材路线重组方案](./editorial-category-board-redesign.md) 取代；本文仅保留历史设计记录，不作为当前实现依据。
+
 ## 1. 目标与结论
 
 本文解决一个具体问题：自动图文预选目前只保存“进入图文池”，生成阶段再把候选统一当作工具图文或事件图文，导致 `news_event`、`open_source_technology`、`open_source_trend` 和 `github_project` 的故事结构混用。

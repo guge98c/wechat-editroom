@@ -1,6 +1,6 @@
 # 内容类型、来源证据与文章/图文分流改造方案
 
-状态：设计评审中，尚未实施  
+状态：已由 [六类编辑榜单与素材路线重组方案](./editorial-category-board-redesign.md) 取代；本文仅保留历史设计记录，不作为当前实现依据。
 日期：2026-08-25  
 关联设计：[四层选题筛选改造方案](./four-layer-topic-selection-refactor-plan.md)、[事件归并与事件热榜设计](./event-resolution-and-hotlist-design.md)
 

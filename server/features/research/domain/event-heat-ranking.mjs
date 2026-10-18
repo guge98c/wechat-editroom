@@ -1,5 +1,5 @@
 const HOUR = 60 * 60 * 1000;
-export const EVENT_HEAT_RANKING_VERSION = 5;
+export const EVENT_HEAT_RANKING_VERSION = 6;
 
 function timeValue(value) {
   const parsed = Date.parse(value || '');
@@ -59,16 +59,10 @@ function reasonList({ state, newReportCount, sourceCount, repeatDays, currentCou
   return reasons.length ? reasons : ['等待更多可核验信息'];
 }
 
-function classificationOf(event = {}) {
-  const raw = event.classification || event.card?.classification || event.event_card?.classification || {};
-  const contentClass = String(raw.contentClass || raw.content_class || event.content_class || '').trim();
-  const features = raw.features || event.classification_features || {};
-  return {
-    contentClass: ['github_project', 'open_source_technology', 'open_source_trend', 'news_event'].includes(contentClass)
-      ? contentClass : 'news_event',
-    status: String(raw.status || raw.classification_status || event.classification_status || 'needs_review'),
-    features: features && typeof features === 'object' ? features : {},
-  };
+function editorialCategoryOf(event = {}) {
+  return normalizeEditorialCategory(event.editorial_category || event.editorialCategory || event.topic_category || event.category, {
+    repository: isRepositoryEvent(event),
+  });
 }
 
 function eventText(event = {}) {
@@ -207,78 +201,18 @@ function accountNewsScoreParts({ event, currentHotspots, base }) {
   };
 }
 
-function scorePartsForClass(contentClass, { event, currentHotspots, currentMemberships, base, asOf }) {
-  const features = classificationOf(event).features;
-  const scores = preScoresOf(event, currentHotspots);
-  const stats = sourceStats({ currentHotspots, currentMemberships, features });
-  const repositoryMeta = event.repositoryMeta || event.articles?.find((article) => article.repositoryMeta)?.repositoryMeta || null;
-  const text = eventText(event);
-  const freshness = Math.round(15 * decay(base.lastUpdateAt ? timeValue(base.lastUpdateAt) : timeValue(base.lastSeenAt), asOf, 240));
-  if (contentClass === 'open_source_technology') {
-    const novelty = clamp((Number(scores.informationGain) || 0) / 15 * 15 + (features.hasPaper ? 5 : 0) + (features.hasBenchmark ? 5 : 0), 0, 25);
-    const mechanismDepth = clamp((features.hasTechnicalDocs ? 8 : 0) + (features.hasPaper ? 7 : 0) + (features.hasBenchmark ? 5 : 0), 0, 20);
-    const engineeringImpact = clamp((Number(scores.impact) || 0) / 10 * 12 + (features.hasAdoptionSignal ? 4 : 0) + (features.hasCompatibilitySignal ? 4 : 0), 0, 20);
-    const reproducibility = clamp((features.hasBenchmark ? 9 : 0) + (features.hasPaper ? 4 : 0) + (features.hasTechnicalDocs ? 4 : 0) + (repositoryMeta ? 3 : 0), 0, 15);
-    const timeliness = clamp(Math.round(20 * decay(base.lastUpdateAt ? timeValue(base.lastUpdateAt) : timeValue(base.lastSeenAt), asOf, 168)), 0, 20);
-    return { novelty: Number(novelty.toFixed(1)), mechanismDepth: Number(mechanismDepth.toFixed(1)), engineeringImpact: Number(engineeringImpact.toFixed(1)), reproducibility: Number(reproducibility.toFixed(1)), timeliness, sourceCount: stats.sourceCount, scoreValue: Number(clamp(novelty + mechanismDepth + engineeringImpact + reproducibility + timeliness, 0, 100).toFixed(1)) };
-  }
-  if (contentClass === 'open_source_trend') {
-    const breadth = clamp((stats.sourceCount * 4) + ((Number(features.subjectCount) || 0) * 4), 0, 25);
-    const trajectory = clamp((features.hasTimeline ? 8 : 0) + (features.hasAdoptionSignal ? 5 : 0) + (features.hasMigrationSignal ? 5 : 0) + (base.repeatDays > 1 ? 2 : 0), 0, 20);
-    const ecosystemImpact = clamp((features.hasAdoptionSignal ? 7 : 0) + (features.hasMigrationSignal ? 5 : 0) + (features.hasCompatibilitySignal ? 4 : 0) + (features.hasPolicyOrStandardSignal ? 4 : 0), 0, 20);
-    const evidenceQuality = clamp((stats.sourceCount * 4) + (features.hasTechnicalDocs ? 2 : 0) + (stats.sourceEvidenceCount > 2 ? 2 : 0), 0, 20);
-    const timeliness = clamp(Math.round(15 * decay(base.lastUpdateAt ? timeValue(base.lastUpdateAt) : timeValue(base.lastSeenAt), asOf, 240)), 0, 15);
-    return { breadth: Number(breadth.toFixed(1)), trajectory: Number(trajectory.toFixed(1)), ecosystemImpact: Number(ecosystemImpact.toFixed(1)), evidenceQuality: Number(evidenceQuality.toFixed(1)), timeliness, sourceCount: stats.sourceCount, scoreValue: Number(clamp(breadth + trajectory + ecosystemImpact + evidenceQuality + timeliness, 0, 100).toFixed(1)) };
-  }
-  if (contentClass === 'github_project') {
-    const projectClarity = clamp((repositoryMeta ? 18 : 8) + (features.hasTechnicalDocs ? 5 : 0) + (/工具|框架|插件|workflow|cli|sdk/i.test(text) ? 7 : 0), 0, 30);
-    const demonstrability = clamp((features.hasGithubRepository ? 12 : 4) + (features.hasRelease ? 5 : 0) + (repositoryMeta?.language ? 4 : 0) + (repositoryMeta?.topics?.length ? 4 : 0), 0, 25);
-    const discoveryFreshness = clamp(Math.round(20 * decay(base.lastUpdateAt ? timeValue(base.lastUpdateAt) : timeValue(base.lastSeenAt), asOf, 96)), 0, 20);
-    const sourceCompleteness = clamp(stats.sourceCount * 4 + (stats.sourceEvidenceCount > 1 ? 4 : 0) + (Number(features.repositoryCount) > 0 ? 4 : 0), 0, 15);
-    const visualPotential = clamp((features.hasGithubRepository ? 6 : 2) + (repositoryMeta?.topics?.length ? 4 : 0), 0, 10);
-    return { projectClarity: Number(projectClarity.toFixed(1)), demonstrability: Number(demonstrability.toFixed(1)), discoveryFreshness, sourceCompleteness: Number(sourceCompleteness.toFixed(1)), visualPotential: Number(visualPotential.toFixed(1)), sourceCount: stats.sourceCount, scoreValue: Number(clamp(projectClarity + demonstrability + discoveryFreshness + sourceCompleteness + visualPotential, 0, 100).toFixed(1)) };
-  }
-  if (contentClass === 'news_event') {
-    return base.scoreParts || accountNewsScoreParts({ event, currentHotspots, base });
-  }
-  return {
-    freshness: base.freshnessScore,
-    increment: base.incrementScore,
-    sourceSpread: base.sourceSpreadScore,
-    momentum: base.momentumScore,
-    chinaRelevance: base.chinaRelevanceScore,
-    evidence: base.evidenceScore,
-    historyDecay: base.historyDecayScore,
-    scoreValue: base.heatScore,
-  };
-}
-
 /** Score a classified stable event without forcing project/technology/trend into news heat semantics. */
-export function scoreClassifiedEvent({ event, currentMemberships = [], historicalMemberships = [], hotspotsById = new Map(), asOf = Date.now() }) {
+export function scoreEditorialEvent({ event, currentMemberships = [], historicalMemberships = [], hotspotsById = new Map(), asOf = Date.now() }) {
   const base = scoreEventHeat({ event, currentMemberships, historicalMemberships, hotspotsById, asOf });
-  const { contentClass, status } = classificationOf(event);
   const currentHotspots = currentMemberships.map((membership) => hotspotsById.get(Number(membership.hotspot_id))).filter(Boolean);
-  const modelParts = scorePartsForClass(contentClass, { event, currentHotspots, currentMemberships, base, asOf });
-  const baseScoreValue = Number.isFinite(Number(modelParts.scoreValue)) ? Number(modelParts.scoreValue) : base.heatScore;
   const platformImpact = platformImpactOf(currentHotspots, asOf);
-  // When counters are present, reserve 10% of T for observed platform impact.
-  // Missing counters are unknown rather than zero, so retain the full base score.
-  const scoreValue = platformImpact.available
-    ? Number(clamp(baseScoreValue * 0.9 + platformImpact.score, 0, 100).toFixed(1))
-    : baseScoreValue;
-  const scoreParts = {
-    ...modelParts,
-    baseScoreValue,
-    platformImpact: platformImpact.score,
-    platformImpactByPlatform: platformImpact.byPlatform,
-    scoreValue,
-  };
-  const scoreModel = contentClass === 'news_event' ? 'T_account' : contentClass;
+  const scoreValue = platformImpact.available ? Number(clamp(base.heatScore * 0.9 + platformImpact.score, 0, 100).toFixed(1)) : base.heatScore;
+  const editorialCategory = editorialCategoryOf({ ...event, articles: event.articles || currentHotspots });
   return {
     ...base,
-    contentClass,
-    classificationStatus: status,
-    scoreModel,
+    editorialCategory,
+    repositoryProject: isRepositoryEvent({ ...event, articles: event.articles || currentHotspots }),
+    scoreModel: 'T_account',
     scoreValue,
     platformImpact: platformImpact.score,
     platformImpactAvailable: platformImpact.available,
@@ -286,8 +220,38 @@ export function scoreClassifiedEvent({ event, currentMemberships = [], historica
     heatScore: scoreValue,
     eventValue: scoreValue,
     t: scoreValue,
-    scoreParts,
-    scoreComparable: false,
+    scoreParts: { ...(base.scoreParts || {}), platformImpact: platformImpact.score, platformImpactByPlatform: platformImpact.byPlatform, scoreValue },
+    scoreComparable: true,
+  };
+}
+
+/** Apply the scoring model named by a deterministic content classification. */
+export function scoreClassifiedEvent(input = {}) {
+  const event = input.event || {};
+  const classification = event.classification || event.classification_snapshot || {};
+  const contentClass = String(classification.content_class || classification.contentClass || event.content_class || 'news_event');
+  const base = scoreEditorialEvent(input);
+  const features = classification.features || classification.classification_features || {};
+  let scoreValue = base.scoreValue;
+  if (contentClass === 'open_source_technology') {
+    scoreValue = Math.max(0, Math.min(100, scoreValue + Math.min(8, Number(features.hasTechnicalDocs) * 2 + Number(features.hasPaper) * 2 + Number(features.hasBenchmark) * 2 + Number(features.hasAdoptionSignal) * 2)));
+  } else if (contentClass === 'github_project') {
+    const repository = event.repositoryMeta || event.repository_meta || {};
+    const stars = metricCount(repository.stars ?? event.stars) || 0;
+    scoreValue = Math.max(0, Math.min(100, scoreValue * 0.65 + Math.min(25, Math.log10(stars + 1) * 8)));
+  } else if (contentClass === 'open_source_trend') {
+    scoreValue = Math.max(0, Math.min(100, scoreValue + Math.min(10, Number(features.independentSourceCount || 0) * 2 + Number(features.subjectCount || 0) * 2)));
+  }
+  const result = Number(scoreValue.toFixed(1));
+  return {
+    ...base,
+    contentClass,
+    scoreModel: contentClass === 'news_event' ? 'T_account' : contentClass,
+    scoreValue: result,
+    heatScore: result,
+    eventValue: result,
+    t: result,
+    scoreParts: { ...base.scoreParts, classificationAdjustment: Number((result - base.scoreValue).toFixed(1)), scoreValue: result },
   };
 }
 
@@ -331,18 +295,17 @@ export function scoreEventHeat({ event, currentMemberships = [], historicalMembe
   const historyDecayScore = Math.round(clamp(Math.max(0, repeatDays - 1) * 4 + (newReportCount === 0 && repeatDays > 1 ? 5 : 0), 0, 20));
   const stale = (newReportCount === 0 && repeatDays > 1 && ageHours > 24) || ageHours > 72;
   const state = stale ? 'stale' : (event.event_state || 'continuing');
-  const genericHeatScore = Math.round(clamp(
-    freshnessScore + incrementScore + sourceSpreadScore + momentumScore + chinaRelevanceScore + evidenceScore - historyDecayScore,
-    0, 100,
-  ));
+  const audienceScores = [event.tags?.preScores?.audience, ...currentHotspots.map((hotspot) => tagValue(hotspot, 'preScores')?.audience)]
+    .map(Number).filter(Number.isFinite);
+  const accountRelevant = audienceScores.length === 0 || audienceScores.some((score) => score > 0);
   const base = { freshnessScore, incrementScore, sourceSpreadScore, momentumScore, evidenceScore, historyDecayScore };
-  const isNewsEvent = classificationOf(event).contentClass === 'news_event';
-  const accountScoreParts = isNewsEvent ? accountNewsScoreParts({ event, currentHotspots, base }) : null;
-  const heatScore = accountScoreParts?.scoreValue ?? genericHeatScore;
+  const accountScoreParts = accountNewsScoreParts({ event, currentHotspots, base });
+  const heatScore = accountScoreParts.scoreValue;
   return {
     eventId: event.id,
     title: representativeTitle(event),
     state,
+    accountRelevant,
     heatScore,
     // 迁移兼容：事件热榜分正式统一称为 eventValue/T，旧 heatScore 保留供现有接口读取。
     eventValue: heatScore,
@@ -354,7 +317,7 @@ export function scoreEventHeat({ event, currentMemberships = [], historicalMembe
     chinaRelevanceScore,
     evidenceScore,
     historyDecayScore,
-    ...(accountScoreParts ? { scoreParts: accountScoreParts } : {}),
+    scoreParts: accountScoreParts,
     reportCount: currentMemberships.length,
     historicalReportCount: allMemberships.length,
     sourceCount: sourceNames.size,
@@ -432,8 +395,8 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
   const items = [...currentByEvent.entries()].map(([eventId, memberships]) => {
     const record = records.get(eventId) || { id: eventId, title: memberships[0]?.title || eventId, event_state: 'continuing' };
     const input = eventInputs.get(eventId) || record;
-    const classification = input.classification || (record.content_class ? { content_class: record.content_class, status: record.classification_status, features: record.classification_features } : null);
-    const scored = scoreClassifiedEvent({ event: { ...record, ...input, id: eventId, classification }, currentMemberships: memberships, historicalMemberships: historyByEvent.get(eventId) || memberships, hotspotsById, asOf });
+    const mergedEvent = { ...record, ...input, id: eventId };
+    const scored = scoreClassifiedEvent({ event: mergedEvent, currentMemberships: memberships, historicalMemberships: historyByEvent.get(eventId) || memberships, hotspotsById, asOf });
     return input?.mergedEventIds?.length > 1 ? { ...scored, mergedEventIds: input.mergedEventIds } : scored;
   }).sort((left, right) => right.scoreValue - left.scoreValue
     || right.incrementScore - left.incrementScore
@@ -441,18 +404,27 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
     || right.reportCount - left.reportCount
     || String(left.lastSeenAt || '').localeCompare(String(right.lastSeenAt || ''))
     || left.eventId.localeCompare(right.eventId));
-  const ranked = items.map((item, index) => {
+  const excludedIrrelevant = items.filter((item) => !item.accountRelevant);
+  const ranked = items.filter((item) => item.accountRelevant).map((item, index) => {
     const prior = previous.get(item.eventId);
     const priorRank = Number.isFinite(Number(prior?.rank)) ? Number(prior.rank) : null;
     return { ...item, rank: index + 1, previousRank: priorRank, rankDelta: priorRank == null ? null : priorRank - (index + 1) };
   });
-  const rankings = Object.fromEntries(['news_event', 'open_source_technology', 'open_source_trend', 'github_project'].map((contentClass) => {
-    const board = ranked.filter((item) => item.contentClass === contentClass).map((item, index) => {
+  const categoryRankings = Object.fromEntries(EDITORIAL_CATEGORIES.map((editorialCategory) => {
+    const board = ranked.filter((item) => !item.repositoryProject && item.editorialCategory === editorialCategory).map((item, index) => {
       const prior = previous.get(item.eventId);
-      const priorRank = prior?.contentClass === contentClass && Number.isFinite(Number(prior.rank)) ? Number(prior.rank) : null;
-      return { ...item, rank: index + 1, boardRank: index + 1, rankScope: contentClass, previousRank: priorRank, rankDelta: priorRank == null ? null : priorRank - (index + 1) };
+      const priorRank = prior?.editorialCategory === editorialCategory && Number.isFinite(Number(prior.rank)) ? Number(prior.rank) : null;
+      return { ...item, rank: index + 1, boardRank: index + 1, rankScope: editorialCategory, previousRank: priorRank, rankDelta: priorRank == null ? null : priorRank - (index + 1) };
     });
-    return [contentClass, { contentClass, scoreModel: contentClass === 'news_event' ? 'T_account' : contentClass, scoreComparable: false, totalEvents: board.length, items: board }];
+    return [editorialCategory, { editorialCategory, scoreModel: 'T_account', scoreComparable: true, totalEvents: board.length, items: board }];
+  }));
+  const repositoryProjects = ranked.filter((item) => item.repositoryProject).map((item, index) => ({
+    ...item, rank: index + 1, boardRank: index + 1, rankScope: 'repository_projects',
+  }));
+  categoryRankings.repository_projects = { materialType: 'repository', scoreModel: 'T_account', scoreComparable: false, totalEvents: repositoryProjects.length, items: repositoryProjects };
+  const rankings = Object.fromEntries(['news_event', 'open_source_technology', 'open_source_trend', 'github_project'].map((contentClass) => {
+    const classItems = ranked.filter((item) => item.contentClass === contentClass || (!item.contentClass && contentClass === 'news_event'));
+    return [contentClass, { contentClass, scoreModel: contentClass === 'news_event' ? 'T_account' : contentClass, scoreComparable: false, totalEvents: classItems.length, items: classItems.map((item, index) => ({ ...item, classRank: index + 1 })) }];
   }));
   return {
     schemaVersion: 2,
@@ -461,11 +433,14 @@ export function buildEventHeatRanking({ store, batch, previousItems = [], events
     generatedAt: new Date(asOf).toISOString(),
     batchId: batch.id,
     scoring: { baseModel: 90, platformImpact: 10, platformMetricReferences: PLATFORM_METRIC_REFERENCES, platformImpactNormalization: 'per-metric log saturation; event-age half-life 7 days; per-platform maximum plus capped corroboration; missing metrics preserve the base score', readerConnection: 40, readerImpact: 25, informationGain: 20, evidenceQuality: 10, freshness: 3, diffusion: 2, historyDecay: -15, eventValue: 100 },
-    scoringModels: { news_event: 'T_account', open_source_technology: 'T_technology', open_source_trend: 'T_trend', github_project: 'projectDiscoveryScore' },
+    scoringModels: Object.fromEntries(EDITORIAL_CATEGORIES.map((category) => [category, 'T_account'])),
     totalEvents: ranked.length,
+    excludedAccountIrrelevantCount: excludedIrrelevant.length,
     rankings,
+    categoryRankings,
     items: ranked,
   };
 }
 
 import { buildEventTitle, structuredMatch } from './event-resolution-shadow.mjs';
+import { EDITORIAL_CATEGORIES, isRepositoryEvent, normalizeEditorialCategory } from './editorial-categories.mjs';

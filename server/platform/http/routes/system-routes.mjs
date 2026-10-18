@@ -313,6 +313,25 @@ export async function handleSystemRoutes(context) {
     const trace = store.getWorkflowRunTrace?.(rootRunId, { eventLimit: 1000, modelCallLimit: 500, toolLimit: 500 });
     if (!trace) { json(response, 404, { error: '运行不存在' }); return true; }
     if (action === 'cancel') {
+      const batchRoot = (trace.runs || []).find((run) => String(run.id) === rootRunId
+        && String(run.entry_point || run.entryPoint || '').startsWith('batch-job:'));
+      if (batchRoot) {
+        const jobId = rootRunId.replace(/^job:/, '');
+        const result = aiJobs?.cancel?.(jobId, '用户取消运行');
+        if (result?.ok) {
+          const status = result.cancelling ? 'cancelling' : result.alreadyStopped ? 'already-stopped' : 'cancelled';
+          json(response, result.cancelling ? 202 : 200, { rootRunId, action, cancelled: result.cancelling ? 1 : result.alreadyStopped ? 0 : 1, status, runStatus: result.job?.status || batchRoot.status });
+          return true;
+        }
+        if (['completed', 'failed', 'interrupted', 'cancelled'].includes(String(batchRoot.status || '').toLowerCase())) {
+          json(response, 200, { rootRunId, action, cancelled: 0, status: 'already-stopped', runStatus: batchRoot.status });
+          return true;
+        }
+        if (result && result.code !== 'JOB_NOT_FOUND') {
+          json(response, 409, { rootRunId, action, cancelled: 0, status: 'not-cancellable', runStatus: result.status || batchRoot.status, code: result.code });
+          return true;
+        }
+      }
       const activeRuns = (trace.runs || []).filter((run) => isAgentRunActive(run.id));
       activeRuns.forEach((run) => cancelAgentRun(run.id));
       json(response, activeRuns.length ? 202 : 409, { rootRunId, action, cancelled: activeRuns.length, status: activeRuns.length ? 'cancelling' : 'not-active' });

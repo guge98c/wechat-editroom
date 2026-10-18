@@ -31,28 +31,33 @@ export function evaluateEventCardGate(candidate, analysisRecord, editorial) {
   return {ready:checks.every((item)=>item.ok),passed:checks.filter((item)=>item.ok).length,total:checks.length,checks,issues:checks.filter((item)=>!item.ok).map((item)=>item.label),contentType:'event'};
 }
 
-export function evaluateClassifiedCardGate(candidate, contentType, analysisRecord, editorial) {
-  const storyboardClass=contentType==='event'
-    ? (candidate?.content_class==='open_source_trend'?'trend':'technology')
-    : contentType;
-  const analysis=analysisRecord?.analysis||analysisRecord||{};
-  const facts=analysis.factBase||{};
-  const audit=analysis.sourceAudit||{};
-  let plan=[];try{plan=Array.isArray(editorial?.card_plan_json)?editorial.card_plan_json:JSON.parse(editorial?.card_plan_json||'[]');}catch{}
-  const evidence=Array.isArray(facts.classificationEvidence)?facts.classificationEvidence:[];
-  const technical=Array.isArray(facts.mechanisms)&&facts.mechanisms.length || Array.isArray(facts.architecture)&&facts.architecture.length || Array.isArray(facts.benchmarks)&&facts.benchmarks.length || evidence.some((item)=>/technical|mechanism|architecture|benchmark|performance|机制|架构|性能|基准/i.test(`${item?.role||''} ${item?.claim||''}`));
-  const trend=Number(audit.independentSourceCount||0)>=2 || (Array.isArray(facts.signals)&&facts.signals.length>0) || (Array.isArray(facts.actors)&&facts.actors.length>=2) || (Array.isArray(facts.timeline)&&facts.timeline.length>=2);
-  const checks=[
-    {key:'analysis',label:'分类事实基座已生成',ok:Boolean(analysis.eventSummary||facts.confirmedFacts?.length)},
-    {key:'sources',label:'至少有一个可用来源',ok:(analysis.sources||[]).some((item)=>item.status==='ok')},
-    {key:'boundaries',label:'确认事实与未核实主张已分开',ok:Array.isArray(facts.confirmedFacts)&&Array.isArray(facts.claims)},
-    {key:'classification-evidence',label:storyboardClass==='technology'?'已具备机制、架构或性能证据':'已具备趋势变化证据',ok:storyboardClass==='technology'?technical:trend},
-    {key:'storyboard',label:`${storyboardClass==='technology'?'技术':'趋势'}故事板包含 4～8 页`,ok:plan.length>=4&&plan.length<=8},
-    {key:'disclosure',label:'事实边界已披露',ok:Boolean(editorial?.must_disclose?.trim())},
-    {key:'claims',label:'禁止表达已填写',ok:Boolean(editorial?.forbidden_claims?.trim())},
-    {key:'reader',label:'目标读者和传播问题已明确',ok:Boolean(editorial?.target_reader?.trim()&&editorial?.pain_point?.trim())},
-  ];
-  return {ready:checks.every((item)=>item.ok),passed:checks.filter((item)=>item.ok).length,total:checks.length,checks,issues:checks.filter((item)=>!item.ok).map((item)=>item.label),contentType:'event',storyboardClass};
+/** Additional evidence checks for classified open-source content, layered over the shared event-card gate. */
+export function evaluateClassifiedCardGate(candidate, contentClass, analysisRecord, editorial) {
+  const base = evaluateEventCardGate(candidate, analysisRecord, editorial);
+  const analysis = analysisRecord?.analysis || analysisRecord || {};
+  const facts = analysis.factBase || {};
+  const sources = Array.isArray(analysis.sources) ? analysis.sources.filter((item) => item?.status === 'ok') : [];
+  const normalizedClass = String(contentClass || '').toLowerCase();
+  let typeCheck = null;
+  if (normalizedClass === 'technology' || normalizedClass === 'open_source_technology') {
+    const evidence = [facts.mechanisms, facts.architecture, facts.performance, facts.benchmarks].flatMap((item) => Array.isArray(item) ? item : item ? [item] : []);
+    typeCheck = { key: 'technology-evidence', label: '开源技术需要机制、架构或性能证据', ok: evidence.length > 0 };
+  } else if (normalizedClass === 'trend' || normalizedClass === 'open_source_trend') {
+    const actors = Array.isArray(facts.actors) ? facts.actors : [];
+    const signals = Array.isArray(facts.signals) ? facts.signals : [];
+    const independentSourceCount = Number(analysis.sourceAudit?.independentSourceCount || new Set(sources.map((item) => item.source || item.url).filter(Boolean)).size);
+    typeCheck = { key: 'trend-evidence', label: '开源趋势需要多来源、多主体或明确变化信号', ok: independentSourceCount >= 2 && (actors.length >= 2 || signals.length > 0) };
+  }
+  if (!typeCheck) return base;
+  const checks = [typeCheck, ...base.checks];
+  return {
+    ...base,
+    ready: checks.every((item) => item.ok),
+    passed: checks.filter((item) => item.ok).length,
+    total: checks.length,
+    checks,
+    issues: checks.filter((item) => !item.ok).map((item) => item.label),
+  };
 }
 
 // 自定义图文首批开放的内容类型（待办 1+6 设计评审拍板：教程、清单、观点）

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { candidateArticleDir } from '../core/workspace-paths.mjs';
 
-const CATEGORIES = ['🤖 AI/技术动态', '📰 综合资讯', '🏢 大厂战略', '📈 行业趋势', '💼 职场生态'];
+const CATEGORIES = ['产品与技术动态', '大厂与商业战略', '职场与组织变化', '开源项目与开发者生态', '行业趋势与市场变化', '政策与公共议题'];
 
 function isoHoursAgo(hours) {
   return new Date(Date.now() - hours * 3600 * 1000).toISOString();
@@ -43,7 +43,7 @@ const todayItems = [
   hotspot({
     title: '阿里云宣布开源新一代 Qwen 模型，推理成本再降三成',
     url: 'https://example.com/news/qwen-open-source',
-    category: '🤖 AI/技术动态', marketScope: '国内', score: 92,
+    category: '产品与技术动态', marketScope: '国内', score: 92,
     sourceName: '36氪', route: '/36kr/hot-list',
     publishedAt: isoHoursAgo(3),
     summary: '阿里云在开发者日宣布开源新一代 Qwen 系列模型，官方称同等能力下推理成本下降约 30%，并开放长上下文与工具调用能力。',
@@ -51,7 +51,7 @@ const todayItems = [
   hotspot({
     title: '开源大模型密集上新：性能对标旗舰，权重与量化包同步放出',
     url: 'https://example.com/news/open-model-release',
-    category: '🤖 AI/技术动态', marketScope: '全球', score: 85,
+    category: '行业趋势与市场变化', marketScope: '全球', score: 85,
     sourceName: 'Solidot', route: '/solidot',
     publishedAt: isoHoursAgo(5),
     summary: '多个开源大模型在同一周内更新版本，参数量更小、推理更快，社区出现大量本地部署教程，MCP 工具生态随之增长。',
@@ -59,7 +59,7 @@ const todayItems = [
   hotspot({
     title: '微信公众平台新规：AI 生成内容需主动声明',
     url: 'https://example.com/news/wechat-ai-label',
-    category: '📰 综合资讯', marketScope: '国内', score: 88,
+    category: '政策与公共议题', marketScope: '国内', score: 88,
     sourceName: '晚点 LatePost', route: '/latepost',
     publishedAt: isoHoursAgo(6),
     summary: '微信公众平台发布内容规范更新，要求创作者对 AI 生成内容进行声明，平台将对标识情况与原创保护联动评估。',
@@ -67,7 +67,7 @@ const todayItems = [
   hotspot({
     title: '海外主流内容平台集体上线 AI 生成内容标识',
     url: 'https://example.com/news/ai-content-label-global',
-    category: '📰 综合资讯', marketScope: '全球', score: 84,
+    category: '政策与公共议题', marketScope: '全球', score: 84,
     sourceName: 'TechCrunch', route: '/techcrunch/news',
     publishedAt: isoHoursAgo(8),
     summary: '多家海外内容与社交媒体平台在同一周内推出 AI 生成内容标识，规范使用与透明度成为新一轮行业共识。',
@@ -75,7 +75,7 @@ const todayItems = [
   hotspot({
     title: '公众号流量主政策调整：原创与互动权重上调',
     url: 'https://example.com/news/mp-traffic-policy',
-    category: '📈 行业趋势', marketScope: '国内', score: 80,
+    category: '大厂与商业战略', marketScope: '国内', score: 80,
     sourceName: '虎嗅', route: '/huxiu/article',
     publishedAt: isoHoursAgo(10),
     summary: '流量主收益规则更新，原创占比与粉丝互动被纳入更高权重，靠转载与洗稿的账号收益进一步收窄。',
@@ -83,7 +83,7 @@ const todayItems = [
   hotspot({
     title: 'Node.js 24 正式支持内置 SQLite，全栈开发再简化',
     url: 'https://example.com/news/node-sqlite',
-    category: '💼 职场生态', marketScope: '全球', score: 82,
+    category: '产品与技术动态', marketScope: '全球', score: 82,
     sourceName: 'Reddit · r/programming', route: 'programming',
     publishedAt: isoHoursAgo(12),
     summary: 'Node.js 24 将 SQLite 作为实验性内置模块提供，本地数据型工具不再需要单独安装数据库依赖，社区讨论热烈。',
@@ -91,7 +91,7 @@ const todayItems = [
   hotspot({
     title: '七家新能源车企公布七月销量，头部座次生变',
     url: 'https://example.com/news/nev-sales',
-    category: '📈 行业趋势', marketScope: '国内', score: 78,
+    category: '行业趋势与市场变化', marketScope: '国内', score: 78,
     sourceName: '界面新闻', route: '/jiemian/lists/65',
     publishedAt: isoHoursAgo(14),
     summary: '多家新能源车企披露七月交付数据，整体同比增长，但部分品牌增速放缓，价格战与智能驾驶成为下一阶段焦点。',
@@ -99,7 +99,7 @@ const todayItems = [
   hotspot({
     title: '新能源产业链观察：电池新工艺量产提速',
     url: 'https://example.com/news/battery-process',
-    category: '📈 行业趋势', marketScope: '国内', score: 72,
+    category: '行业趋势与市场变化', marketScope: '国内', score: 72,
     sourceName: '界面新闻', route: '/jiemian/lists/65',
     publishedAt: isoHoursAgo(16),
     summary: '多家电池厂商公布新一代电芯工艺进展，能量密度与快充指标提升，量产节奏成为行业关注重点。',
@@ -107,7 +107,7 @@ const todayItems = [
   hotspot({
     title: '半导体出口管制再收紧，产业链加速国产替代',
     url: 'https://example.com/news/semiconductor-export',
-    category: '🏢 大厂战略', marketScope: '国内', score: 86,
+    category: '政策与公共议题', marketScope: '国内', score: 86,
     sourceName: 'ReadHub', route: '/readhub',
     publishedAt: isoHoursAgo(20),
     summary: '新一轮半导体设备出口管制生效，相关上市公司回应业务影响，设备与材料国产替代逻辑再度被强化。',
@@ -115,7 +115,7 @@ const todayItems = [
   hotspot({
     title: '折叠屏手机出货量创新高，轻薄与影像成新卖点',
     url: 'https://example.com/news/foldable-phone',
-    category: '📰 综合资讯', marketScope: '国内', score: 70,
+    category: '产品与技术动态', marketScope: '国内', score: 70,
     sourceName: '36氪', route: '/36kr/hot-list',
     publishedAt: isoHoursAgo(26),
     summary: '折叠屏手机市场持续扩张，厂商在新一代产品上同时强调轻薄机身与影像能力，高端机竞争进一步加剧。',
@@ -126,7 +126,7 @@ const yesterdayItems = [
   hotspot({
     title: 'AI 编程助手进入日常：调查显示近半数开发者已在用',
     url: 'https://example.com/news/ai-coding-survey',
-    category: '💼 职场生态', marketScope: '全球', score: 90,
+    category: '职场与组织变化', marketScope: '全球', score: 90,
     sourceName: 'ReadHub', route: '/readhub',
     publishedAt: isoHoursAgo(28),
     summary: '一份开发者调查显示，近半数受访者已在日常开发中使用 AI 编程助手，代码审查与测试生成是最高频场景。',
@@ -134,7 +134,7 @@ const yesterdayItems = [
   hotspot({
     title: 'MCP 协议持续升温：主流工具与应用加速接入',
     url: 'https://example.com/news/mcp-adoption',
-    category: '🤖 AI/技术动态', marketScope: '全球', score: 87,
+    category: '产品与技术动态', marketScope: '全球', score: 87,
     sourceName: 'Reddit · r/artificial', route: 'artificial',
     publishedAt: isoHoursAgo(30),
     summary: 'Model Context Protocol 生态扩展加快，更多编辑器、数据库与浏览器工具接入，本地 AI 工作流的组装变得更容易。',
@@ -142,7 +142,7 @@ const yesterdayItems = [
   hotspot({
     title: '多家大模型厂商下调 API 价格，推理成本进入下降通道',
     url: 'https://example.com/news/llm-price-cut',
-    category: '🤖 AI/技术动态', marketScope: '国内', score: 83,
+    category: '大厂与商业战略', marketScope: '国内', score: 83,
     sourceName: '36氪', route: '/36kr/hot-list',
     publishedAt: isoHoursAgo(34),
     summary: '大模型 API 价格持续下调，长文本与高并发场景的单位成本显著降低，应用层开始把更重的任务交给模型。',
@@ -150,7 +150,7 @@ const yesterdayItems = [
   hotspot({
     title: '国产大模型长文本评测：中英文能力差距进一步缩小',
     url: 'https://example.com/news/llm-long-context',
-    category: '📈 行业趋势', marketScope: '国内', score: 75,
+    category: '行业趋势与市场变化', marketScope: '国内', score: 75,
     sourceName: '虎嗅', route: '/huxiu/article',
     publishedAt: isoHoursAgo(40),
     summary: '第三方评测显示，国产大模型在长文本理解与中文创作上表现稳定，与国际旗舰模型的差距持续收窄。',
@@ -158,7 +158,7 @@ const yesterdayItems = [
   hotspot({
     title: '内容创作工具周报：公众号排版与配图效率成为关注焦点',
     url: 'https://example.com/news/content-tool-weekly',
-    category: '📰 综合资讯', marketScope: '国内', score: 68,
+    category: '产品与技术动态', marketScope: '国内', score: 68,
     sourceName: '虎嗅', route: '/huxiu/article',
     publishedAt: isoHoursAgo(44),
     summary: '本周内容创作工具讨论集中在排版效率与配图质量，编辑工作台与一键成图类工具的热度上升。',

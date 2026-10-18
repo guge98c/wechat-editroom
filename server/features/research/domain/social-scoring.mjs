@@ -1,5 +1,5 @@
-import { socialRouteForContentClass } from '../../social-cards/domain/social-routing.mjs';
-const CONTENT_CLASSES = new Set(['github_project', 'open_source_technology', 'open_source_trend', 'news_event']);
+import { isPureProjectEvent } from './content-routing.mjs';
+import { socialRouteForMaterialType } from '../../social-cards/domain/social-routing.mjs';
 
 export const G_SOCIAL_WEIGHTS = Object.freeze({
   factSupport: 0.25,
@@ -10,10 +10,10 @@ export const G_SOCIAL_WEIGHTS = Object.freeze({
 });
 
 export const G_SOCIAL_THRESHOLDS = Object.freeze({ candidate: 55, auto: 70 });
-export const G_SOCIAL_CLASS_CAPS = Object.freeze({ github_project: 6 });
+export const G_SOCIAL_MATERIAL_CAPS = Object.freeze({ repository: 6 });
+export const G_SOCIAL_CLASS_CAPS = Object.freeze({ github_project: 6, repository: 6 });
 
 const DEMONSTRABLE_PATTERN = /工具|教程|学习资源|框架|跨平台|开发者|开发|临时邮箱|隐私|窗口管理器|代码审查|架构图|音频处理|文件传输|监控|skill|workflow|framework|library|plugin|server|cli|agent/i;
-const TECHNICAL_EVIDENCE_PATTERN = /机制|架构|原理|性能|基准|benchmark|兼容|协议|标准|实现|技术栈|模型结构|technical_mechanism|architecture|benchmark|performance/i;
 const TREND_SIGNAL_PATTERN = /采用|迁移|生态|竞争|标准|政策|规范|趋势|增长|发布|合作|集成|adoption|migration|ecosystem|standard|policy|trend/i;
 
 function clamp(value, min = 0, max = 100) {
@@ -39,16 +39,6 @@ function sourceCountOf(item) {
 
 function articleCountOf(item) { return Math.max(articlesOf(item).length, Number(item?.reportCount || item?.report_count || 0)); }
 
-function evidenceOf(item) {
-  return Array.isArray(item?.classificationEvidence)
-    ? item.classificationEvidence
-    : Array.isArray(item?.classification_evidence) ? item.classification_evidence : [];
-}
-
-function evidenceTextOf(item) {
-  return textOf(evidenceOf(item).map((evidence) => [evidence?.role, evidence?.claim, evidence?.source_id]));
-}
-
 function cardCountOf(item, key) {
   const direct = Number(item?.[key]);
   if (Number.isFinite(direct)) return Math.max(0, direct);
@@ -61,12 +51,8 @@ function uniqueTimeCount(item) {
   return new Set(values).size + Math.max(0, cardCountOf(item, 'timelineCount') - values.length);
 }
 
-function normalizeContentClass(item) {
-  const value = String(item?.contentClass || item?.content_class || '').trim();
-  if (CONTENT_CLASSES.has(value)) return value;
-  const repository = item?.repositoryMeta;
-  const github = articlesOf(item).some((article) => /github\.com\//i.test(String(article?.url || '')));
-  return repository || github ? 'github_project' : 'news_event';
+function materialTypeOf(item) {
+  return isPureProjectEvent(item) || item?.material_type === 'repository' ? 'repository' : 'event';
 }
 
 function repositorySignals(item, text) {
@@ -93,35 +79,6 @@ function eventSignals(item, text, sourceCount, articleCount) {
   };
 }
 
-function technologySignals(item, text, sourceCount) {
-  const evidenceText = evidenceTextOf(item);
-  const technicalEvidence = TECHNICAL_EVIDENCE_PATTERN.test(`${text} ${evidenceText}`);
-  const architectureEvidence = /架构|原理|机制|architecture|technical_mechanism/i.test(`${text} ${evidenceText}`);
-  const benchmarkEvidence = /性能|基准|benchmark|performance/i.test(`${text} ${evidenceText}`);
-  return {
-    technicalEvidence,
-    factSupport: clamp(12 + (technicalEvidence ? 38 : 0) + (architectureEvidence ? 20 : 0) + (benchmarkEvidence ? 15 : 0) + Math.min(15, sourceCount * 7)),
-    visualPotential: clamp(20 + (architectureEvidence ? 28 : 0) + (benchmarkEvidence ? 20 : 0) + (technicalEvidence ? 18 : 0)),
-    productionReadiness: clamp(15 + (technicalEvidence ? 35 : 0) + (architectureEvidence ? 22 : 0) + (benchmarkEvidence ? 13 : 0) + Math.min(15, sourceCount * 7)),
-  };
-}
-
-function trendSignals(item, text, sourceCount) {
-  const evidenceText = evidenceTextOf(item);
-  const combined = `${text} ${evidenceText}`;
-  const signal = TREND_SIGNAL_PATTERN.test(combined);
-  const actorCount = Number(item?.actorCount || item?.actor_count || 0);
-  const timeCount = Math.max(Number(item?.timeSignalCount || item?.time_signal_count || 0), uniqueTimeCount(item));
-  return {
-    signal,
-    actorCount,
-    timeCount,
-    factSupport: clamp(8 + Math.min(35, sourceCount * 16) + Math.min(22, actorCount * 11) + (signal ? 20 : 0) + Math.min(15, timeCount * 8)),
-    visualPotential: clamp(15 + Math.min(25, actorCount * 12) + Math.min(25, timeCount * 12) + (signal ? 20 : 0)),
-    productionReadiness: clamp(12 + Math.min(35, sourceCount * 16) + Math.min(20, actorCount * 10) + Math.min(20, timeCount * 10) + (signal ? 13 : 0)),
-  };
-}
-
 function commonSignals(item, text, sourceCount, articleCount) {
   const china = clamp(Number(item?.chinaRelevance || item?.china_relevance_score || 0) / 12 * 60);
   const audience = clamp(Number(item?.preScores?.audience || 0) / 20 * 40);
@@ -139,11 +96,11 @@ function commonSignals(item, text, sourceCount, articleCount) {
   return { readerValue, projectReaderValue: Number.isFinite(projectReaderValue) ? clamp(projectReaderValue, 0, 100) : null, projectFeedbackAdjustment: feedbackAdjustment, contentClarity: clarity };
 }
 
-function qualificationFor(item, contentClass, signals) {
+function qualificationFor(item, materialType, signals) {
   const sourceCount = sourceCountOf(item);
   const articleCount = articleCountOf(item);
   if (item?.riskLevel === '高') return { status: 'blocked', reason: '风险等级为高', candidateEligible: false, autoEligible: false };
-  if (contentClass === 'github_project') {
+  if (materialType === 'repository') {
     const repository = item?.repositoryMeta || {};
     const text = textOf([item?.title, item?.chinaRelevanceReason, repository.description, repository.language, repository.topics,
       repository.projectType, repository.scenarioIds, repository.directUseCase, repository.discoveryChannels]);
@@ -152,37 +109,39 @@ function qualificationFor(item, contentClass, signals) {
       return { status: 'reader_value_blocked', reason: `项目读者价值 ${Number(repository.projectReaderValue).toFixed(1)}，低于候选线 60`, candidateEligible: false, autoEligible: false };
     }
   }
-  if (contentClass === 'news_event' && (signals.confirmedFacts < 1 || sourceCount < 1)) {
-    return { status: 'type_gate_blocked', reason: '普通事件缺少已确认事实或来源证据', candidateEligible: false, autoEligible: false };
-  }
-  if (contentClass === 'open_source_technology' && !signals.technicalEvidence) {
+  const contentClass = String(item?.contentClass || item?.content_class || '');
+  const classificationEvidence = Array.isArray(item?.classificationEvidence) ? item.classificationEvidence : Array.isArray(item?.classification_evidence) ? item.classification_evidence : [];
+  if (contentClass === 'open_source_technology'
+    && !classificationEvidence.some((entry) => entry?.role === 'technical_mechanism' || entry?.role === 'architecture' || entry?.role === 'performance')) {
     return { status: 'type_gate_blocked', reason: '开源技术缺少机制、架构或性能证据', candidateEligible: false, autoEligible: false };
   }
-  if (contentClass === 'open_source_trend' && (sourceCount < 2 || (!signals.signal && signals.actorCount < 2 && signals.timeCount < 2))) {
-    return { status: 'type_gate_blocked', reason: '开源趋势缺少多来源、多主体或跨时间变化信号', candidateEligible: false, autoEligible: false };
+  if (contentClass === 'open_source_trend') {
+    const features = item?.classificationFeatures || item?.classification_features || {};
+    if (!(sourceCount >= 2 && (features.hasAdoptionSignal || features.subjectCount >= 2 || classificationEvidence.some((entry) => entry?.role === 'trend_signal')))) {
+      return { status: 'type_gate_blocked', reason: '开源趋势缺少多来源与变化信号', candidateEligible: false, autoEligible: false };
+    }
+  }
+  if (materialType === 'event' && (signals.confirmedFacts < 1 || sourceCount < 1)) {
+    return { status: 'evidence_gate_blocked', reason: '事件缺少已确认事实或来源证据', candidateEligible: false, autoEligible: false };
   }
   const candidateEligible = signals.gSocial >= G_SOCIAL_THRESHOLDS.candidate;
   const autoEligible = signals.gSocial >= G_SOCIAL_THRESHOLDS.auto;
-  if (autoEligible) return { status: 'auto_eligible', reason: '通过类型门禁和自动图文线', candidateEligible, autoEligible };
+  if (autoEligible) return { status: 'auto_eligible', reason: '通过事实门禁和自动图文线', candidateEligible, autoEligible };
   if (candidateEligible) return { status: 'candidate', reason: `G_social ${signals.gSocial}，达到候选线但未达到自动图文线 ${G_SOCIAL_THRESHOLDS.auto}`, candidateEligible, autoEligible };
   return { status: 'below_threshold', reason: `G_social ${signals.gSocial}，低于候选线 ${G_SOCIAL_THRESHOLDS.candidate}`, candidateEligible, autoEligible };
 }
 
 export function scoreSocialCandidate(item) {
-  const contentClass = normalizeContentClass(item);
+  const materialType = materialTypeOf(item);
   const repository = item?.repositoryMeta || {};
   const text = textOf([item?.title, item?.chinaRelevanceReason, item?.keywords, item?.articles?.map((article) => [article?.title, article?.summary, article?.source]), repository.description, repository.language, repository.topics,
-    repository.projectType, repository.scenarioIds, repository.directUseCase, repository.discoveryChannels, evidenceTextOf(item)]);
+    repository.projectType, repository.scenarioIds, repository.directUseCase, repository.discoveryChannels]);
   const sourceCount = sourceCountOf(item);
   const articleCount = articleCountOf(item);
   const common = commonSignals(item, text, sourceCount, articleCount);
-  const typeSignals = contentClass === 'github_project'
+  const typeSignals = materialType === 'repository'
     ? repositorySignals(item, text)
-    : contentClass === 'open_source_technology'
-      ? technologySignals(item, text, sourceCount)
-      : contentClass === 'open_source_trend'
-        ? trendSignals(item, text, sourceCount)
-        : eventSignals(item, text, sourceCount, articleCount);
+    : eventSignals(item, text, sourceCount, articleCount);
   const dimensions = {
     factSupport: round(typeSignals.factSupport),
     visualPotential: round(typeSignals.visualPotential),
@@ -192,20 +151,17 @@ export function scoreSocialCandidate(item) {
   };
   const saturationPenalty = clamp(Number(item?.saturationPenalty || 0), 0, 10);
   const riskPenalty = item?.riskLevel === '较高' ? 12 : item?.riskLevel === '中' ? 5 : 0;
-  const missingEvidencePenalty = contentClass === 'open_source_technology' && !typeSignals.technicalEvidence ? 15
-    : contentClass === 'open_source_trend' && !typeSignals.signal ? 10 : 0;
+  const missingEvidencePenalty = cardCountOf(item, 'confirmedFactCount') < 1 ? 8 : 0;
   const penalties = { saturationPenalty: round(saturationPenalty), riskPenalty: round(riskPenalty), missingEvidencePenalty: round(missingEvidencePenalty) };
   const weighted = Object.entries(G_SOCIAL_WEIGHTS).reduce((sum, [key, weight]) => sum + dimensions[key] * weight, 0);
   const gSocial = round(weighted - saturationPenalty - riskPenalty - missingEvidencePenalty);
-  const signals = { ...dimensions, ...penalties, gSocial, projectReaderValue: common.projectReaderValue, projectFeedbackAdjustment: common.projectFeedbackAdjustment, confirmedFacts: cardCountOf(item, 'confirmedFactCount'), technicalEvidence: Boolean(typeSignals.technicalEvidence), signal: Boolean(typeSignals.signal), actorCount: Number(typeSignals.actorCount || 0), timeCount: Number(typeSignals.timeCount || uniqueTimeCount(item)), sourceCount, articleCount };
-  const qualification = qualificationFor(item, contentClass, { ...signals, gSocial });
+  const signals = { ...dimensions, ...penalties, gSocial, projectReaderValue: common.projectReaderValue, projectFeedbackAdjustment: common.projectFeedbackAdjustment, confirmedFacts: cardCountOf(item, 'confirmedFactCount'), sourceCount, articleCount };
+  const qualification = qualificationFor(item, materialType, { ...signals, gSocial });
   const repositoryText = textOf([item?.title, repository.description, repository.language, repository.topics, repository.projectType, repository.scenarioIds, repository.directUseCase, repository.discoveryChannels]);
   const trending = /github\s*trending/i.test(repositoryText) || repository?.discoveryChannels?.includes('trending');
   const demonstrable = DEMONSTRABLE_PATTERN.test(repositoryText);
   const reasons = [
-    contentClass === 'github_project' ? 'GitHub 项目' : contentClass === 'open_source_technology' ? '开源技术' : contentClass === 'open_source_trend' ? '开源趋势' : '普通事件',
-    signals.technicalEvidence ? '有技术证据' : null,
-    signals.signal ? '有趋势信号' : null,
+    materialType === 'repository' ? 'GitHub 项目素材' : '事件素材',
     sourceCount > 1 ? `${sourceCount} 个独立来源` : null,
     trending ? 'Trending' : null,
     repository?.discoveryChannels?.includes('search') ? '近期增长发现' : null,
@@ -215,13 +171,15 @@ export function scoreSocialCandidate(item) {
     common.projectFeedbackAdjustment ? `反馈调整 ${common.projectFeedbackAdjustment > 0 ? '+' : ''}${common.projectFeedbackAdjustment}` : null,
     demonstrable ? '可演示工具' : null,
   ].filter(Boolean);
+  const contentClass = String(item?.contentClass || item?.content_class || (materialType === 'repository' ? 'github_project' : 'news_event'));
   return {
     contentClass,
-    ...socialRouteForContentClass(contentClass),
+    materialType,
+    ...socialRouteForMaterialType(materialType),
     gSocial,
     socialScore: gSocial,
     socialScoreDetails: { ...dimensions, ...penalties, projectReaderValue: common.projectReaderValue, projectFeedbackAdjustment: common.projectFeedbackAdjustment, finalScore: gSocial, scoreStage: 'discovery', scoreModel: 'g_social-v1', weights: G_SOCIAL_WEIGHTS,
-      contentClass, qualificationStatus: qualification.status, qualificationReason: qualification.reason,
+      materialType, qualificationStatus: qualification.status, qualificationReason: qualification.reason,
       candidateEligible: qualification.candidateEligible, autoEligible: qualification.autoEligible },
     qualificationStatus: qualification.status,
     qualificationReason: qualification.reason,
@@ -233,17 +191,18 @@ export function scoreSocialCandidate(item) {
   };
 }
 
-export function selectSocialPool(ranking, limit = 10, classCaps = G_SOCIAL_CLASS_CAPS) {
+export function selectSocialPool(ranking, limit = 10, materialCaps = G_SOCIAL_MATERIAL_CAPS) {
   const selected = [];
   const counts = new Map();
   for (const item of Array.isArray(ranking) ? ranking : []) {
     if (!item?.autoEligible && !item?.eligible) continue;
-    const contentClass = String(item.contentClass || 'news_event');
-    const cap = classCaps && Number.isFinite(Number(classCaps[contentClass])) ? Number(classCaps[contentClass]) : Infinity;
-    const count = counts.get(contentClass) || 0;
+    const materialType = String(item.contentClass || item.content_class || item.materialType || 'event');
+    const capKey = materialCaps && Object.hasOwn(materialCaps, materialType) ? materialType : (materialType === 'github_project' ? 'repository' : materialType);
+    const cap = materialCaps && Number.isFinite(Number(materialCaps[capKey])) ? Number(materialCaps[capKey]) : Infinity;
+    const count = counts.get(materialType) || 0;
     if (count >= cap) continue;
     selected.push(item);
-    counts.set(contentClass, count + 1);
+    counts.set(materialType, count + 1);
     if (selected.length >= Math.max(1, Number(limit) || 10)) break;
   }
   return selected;

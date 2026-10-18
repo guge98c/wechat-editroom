@@ -6,7 +6,7 @@
   "kind": "stage",
   "entryPoints": [],
   "contentTypes": [],
-  "inputContract": "github_project_candidates",
+  "inputContract": "repository_project_candidates",
   "outputContract": "project_reader_value_judgments",
   "requiredCapabilities": [],
   "optionalCapabilities": [],

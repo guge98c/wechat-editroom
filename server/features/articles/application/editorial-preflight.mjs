@@ -52,14 +52,13 @@ function parseSnapshot(value, fallback) {
   }
 }
 
-function classificationFor(candidate) {
+function articleRouteFor(candidate) {
   return {
-    content_class: candidate.content_class || 'news_event',
-    status: candidate.classification_status || 'needs_review',
-    confidence: candidate.classification_confidence,
-    reason: candidate.classification_reason || '',
-    evidence: parseSnapshot(candidate.classification_evidence_json, []),
-    features: parseSnapshot(candidate.classification_features_json, {}),
+    editorial_category: candidate.editorial_category || '',
+    material_type: candidate.material_type || '',
+    article_route_approved: Boolean(candidate.article_route_approved),
+    article_eligible: Boolean(candidate.article_eligible),
+    article_eligibility_reason: candidate.article_eligibility_reason || '',
   };
 }
 
@@ -79,15 +78,12 @@ function preflightInput({ candidate, editorial, materialBrief, sourceText, sourc
       candidate_id: candidate.candidate_id,
       hotspot_title: candidate.hotspot_title,
       url: candidate.url,
-      content_class: candidate.content_class,
+      editorial_category: candidate.editorial_category,
       content_route: candidate.content_route,
       article_eligible: candidate.article_eligible,
       article_eligibility_reason: candidate.article_eligibility_reason,
-      classification_status: candidate.classification_status,
-      classification_confidence: candidate.classification_confidence,
-      classification_reason: candidate.classification_reason,
-      classification_evidence_json: candidate.classification_evidence_json,
-      classification_features_json: candidate.classification_features_json,
+      material_type: candidate.material_type,
+      article_route_approved: candidate.article_route_approved,
       composite: Boolean(candidate.composite),
       category: candidate.category,
       angle: candidate.angle,
@@ -164,7 +160,7 @@ function buildPreflightContext({
     candidate: { ...candidate, research_context: effectiveResearch },
     editorial: currentEditorial,
   });
-  const classification = classificationFor(candidate);
+  const classification = articleRouteFor(candidate);
   const routeSnapshot = text(candidate.content_route);
   const routeResult = (candidate.article_eligible === false
     || Number(candidate.article_eligible) === 0

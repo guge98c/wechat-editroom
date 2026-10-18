@@ -173,10 +173,10 @@ test('迁移后的故事板提示词保持六种入口和渠道组合的语义�
     custom:'custom-card-storyboard',
   };
   const snapshots={
-    'repository/wechat':'1a17e3d1b8e15b807b58d59179d4d074e99f27464d2d9ac2b44c89a5cd0aee00',
-    'repository/xiaohongshu':'b1cc51a81d4f872aa6966cd67892000033d6f8700586255915471219e675332c',
-    'event/wechat':'562dcf58e85e3895c12673e91f84ae08e22ccc5bc9659a19aa7a22a5f3d190bd',
-    'event/xiaohongshu':'2ae6c572fb4dcfbc24e22423d69e601733572abfc6cc0a731c244ae6a1ec7f46',
+    'repository/wechat':'0855352b5ff2496d28617722257ecaded3723f59ae13067e622345323619d68d',
+    'repository/xiaohongshu':'e46f63467e746ba0b59d74f01a5dc8cf10d14d0f4013317af93c779dc97e619c',
+    'event/wechat':'ce6c31e920fb73892d646df2a643330336a4ef13389731d0bd7fb6fdb28694ff',
+    'event/xiaohongshu':'51c4ff0576c64225ffc13137ca9eb846f221cb8921e2056537a981f0be4ccede',
     'custom/wechat':'becae18bd7506d49f5c51594491aea48a124cdbd4edf22a9290852fc1cbccf43',
     'custom/xiaohongshu':'6d6f247a89e96ea711c1b83311af8de28612b9f253f4437c4689e1184c0ca6d4',
   };
@@ -228,30 +228,6 @@ test('P2 图文编辑室展示故事板技能选择并随请求提交',()=>{
   assert.match(skills,/storyboard: "故事板规划"/);
 });
 
-test('新增开源技术与趋势故事板复用事件图文输出契约',()=>{
-  for(const [skillName,requiredMethod] of [
-    ['open-source-technology-storyboard','机制'],
-    ['open-source-trend-storyboard','趋势判断'],
-  ]){
-    assert.equal(fs.existsSync(path.join(root,'skills',skillName,'references','storyboard.md')),true);
-    const skillSource=fs.readFileSync(path.join(root,'skills',skillName,'SKILL.md'),'utf8');
-    assert.match(skillSource,/^## 输入/m);
-    assert.match(skillSource,/^## 输出/m);
-    assert.match(skillSource,/references\/storyboard\.md/);
-    const bundle=loadSkillBundle({workspaceRoot:root,skillName});
-    const prompt=buildSocialCardStoryboardSystemPrompt({
-      workspaceRoot:root,skillId:skillName,skillPrompt:bundle.prompt,contentType:'event',channelMode:'wechat',
-    });
-    assert.match(prompt,new RegExp(requiredMethod));
-    assert.match(prompt,/顶层必须直接返回 `card_plan` 数组/);
-    assert.match(prompt,/"content_blocks"/);
-    assert.match(prompt,/不要返回 `storyboard\.pages` 或 `blocks`/);
-    assert.match(prompt,/`list`.*`items`/);
-    assert.match(prompt,/禁止在列表块写 `content`/);
-    assert.match(prompt,/封面最多 1 个核心内容块/);
-  }
-});
-
 test('图文创作页以事实、故事板和交付三阶段组织主路径',()=>{
   const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
   const styles=readStyles();
@@ -301,12 +277,10 @@ test('三类故事板规划与图文生成交付拆成四个内置技能',()=>{
   assert.match(delivery.prompt,/不负责选择故事线或首次规划故事板/);
 });
 
-test('四个内置故事板统一章节、页面角色和类型化降级规则',()=>{
+test('两个内置故事板统一章节、页面角色和类型化降级规则',()=>{
   const cases=[
     ['repository-card-storyboard',['当前运行阶段：','一、页面结构','二、页面选择规则','三、事实分配与防重复','四、证据边界与降级规则','五、内容块、来源与密度规则','六、合并与禁止合并规则','七、常见错误'],/`kind` 和 `role`/],
     ['event-card-storyboard',['当前运行阶段：','一、页面结构','二、页面选择规则','三、事实分配与防重复要求','四、事实与表达边界','五、证据门槛与降级规则','六、密度、合并与模板边界','七、常见错误'],/证据不足时缩短故事板/],
-    ['open-source-technology-storyboard',['当前运行阶段：','一、页面结构','二、页面选择规则','三、事实分配与防重复','四、内容块与来源规则','五、技术边界与密度','六、合并与禁止合并规则','七、证据门槛、降级与常见错误'],/没有机制、架构或工作路径证据时/],
-    ['open-source-trend-storyboard',['当前运行阶段：','一、页面结构','二、页面选择规则','三、事实分配与防重复','四、内容块与来源规则','五、趋势边界与密度','六、合并与禁止合并规则','七、证据门槛、降级与常见错误'],/跨来源、跨主体、跨时间中的两类变化信号/],
   ];
   for(const [skillName,headings,marker] of cases){
     const prompt=loadSkillBundle({workspaceRoot:root,skillName}).prompt;
@@ -317,12 +291,10 @@ test('四个内置故事板统一章节、页面角色和类型化降级规则',
   }
 });
 
-test('五类故事板声明语义视觉意图且不暴露渲染细节',()=>{
+test('三类故事板声明语义视觉意图且不暴露渲染细节',()=>{
   for(const skillName of [
     'repository-card-storyboard',
     'event-card-storyboard',
-    'open-source-technology-storyboard',
-    'open-source-trend-storyboard',
     'custom-card-storyboard',
   ]){
     const prompt=loadSkillBundle({workspaceRoot:root,skillName}).prompt;
