@@ -2,9 +2,10 @@ import crypto from 'node:crypto';
 import { EVENT_RESOLUTION_POLICY, duplicatePenaltyForHeat } from './event-resolution-policy.mjs';
 
 const ACTION_COMPATIBILITY = new Map([
-  ['发布', new Set(['发布', '更新', '开源'])],
-  ['更新', new Set(['发布', '更新', '开源'])],
-  ['开源', new Set(['发布', '更新', '开源'])],
+  ['发布', new Set(['发布', '更新', '产品更新', '开源'])],
+  ['更新', new Set(['发布', '更新', '产品更新', '开源'])],
+  ['产品更新', new Set(['发布', '更新', '产品更新', '开源'])],
+  ['开源', new Set(['发布', '更新', '产品更新', '开源'])],
   ['争议回应', new Set(['争议回应', '评论', '质疑', '后续', '复述'])],
   ['评论', new Set(['争议回应', '评论', '质疑', '后续', '复述'])],
   ['质疑', new Set(['争议回应', '评论', '质疑', '后续', '复述'])],
@@ -33,6 +34,7 @@ const CONTINUITY_STOP_TERMS = new Set([
   '项目', '产品', '工具', '插件', '版本', '开发', '开源', '用户', '团队', '服务',
 ]);
 const POSITION_TERMS = new Set(['ceo', '总裁', '董事长', '负责人', '经理', '部长', '首席', '掌门']);
+const MODEL_FAMILIES = ['deepseek', 'gemini', 'gpt', 'claude', 'qwen', 'kimi', 'glm', 'minimax', 'grok', 'llama', 'mistral'];
 
 function clean(value) {
   return String(value ?? '').normalize('NFKC').trim().toLowerCase()
@@ -50,7 +52,15 @@ function alias(value) {
 
 function normalizeObject(value) {
   const normalized = alias(value);
-  return normalized.replace(/(?:策略|规则|方案|机制)$/u, '') || normalized;
+  const withoutSuffix = normalized.replace(/(?:策略|规则|方案|机制)$/u, '') || normalized;
+  const compact = withoutSuffix.replace(/[^a-z0-9]/g, '');
+  if (MODEL_FAMILIES.some((family) => compact.startsWith(family))) {
+    // Model snapshot labels often append MMDD to the stable product name:
+    // V4.1-Flash-1017 and V4.1 Flash should resolve to the same model object.
+    const stableModel = compact.replace(/(flash|r\d|v\d+?)\d{4}$/i, '$1');
+    return stableModel || compact;
+  }
+  return withoutSuffix;
 }
 
 function tokens(value) {
@@ -184,6 +194,33 @@ function actionCompatibility(left, right) {
   return 0;
 }
 
+function isGenericModelFamilyPair(left, right) {
+  const leftObject = String(left?.objectKey || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const rightObject = String(right?.objectKey || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return MODEL_FAMILIES.some((family) => (
+    (leftObject === family && rightObject.startsWith(family) && rightObject.length > family.length)
+    || (rightObject === family && leftObject.startsWith(family) && leftObject.length > family.length)
+  ));
+}
+
+function uniqueSpecificModelVariant(records, generic, specific) {
+  const compact = (value) => String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const genericObject = compact(generic?.objectKey);
+  const specificObject = compact(specific?.objectKey);
+  const family = MODEL_FAMILIES.find((candidate) => candidate === genericObject);
+  if (!family || !specificObject.startsWith(family) || specificObject.length === family.length) return false;
+  if (generic.whoKey !== specific.whoKey || generic.timeWindow !== specific.timeWindow
+    || actionCompatibility(generic.actionType, specific.actionType) <= 0) return false;
+  const variants = new Set(records.filter((record) => (
+    record.whoKey === generic.whoKey
+    && record.timeWindow === generic.timeWindow
+    && actionCompatibility(generic.actionType, record.actionType) > 0
+    && compact(record.objectKey).startsWith(family)
+    && compact(record.objectKey) !== family
+  )).map((record) => compact(record.objectKey)));
+  return variants.size === 1 && variants.has(specificObject);
+}
+
 function timeCompatibility(left, right) {
   if (!left || !right) return 0.5;
   if (left === right) return 1;
@@ -210,6 +247,8 @@ export function structuredMatch(left, right) {
   let trigger = triggerMatch(left.triggerKey, right.triggerKey);
   const action = actionCompatibility(left.actionType, right.actionType);
   const time = timeCompatibility(left.timeWindow, right.timeWindow);
+  const genericModelPair = isGenericModelFamilyPair(left, right)
+    && whoMatch === 1 && time >= 0.5 && action > 0;
   // 标题修辞差异很大时，如果主体、对象、时间和事实实体高度一致，
   // 允许进入自动合并区间；这正是“称福利”与“谁缴社保”这类同一争议的情况。
   if (trigger === 0 && objectMatch === 1 && entity >= 0.3) trigger = 0.6;
@@ -217,10 +256,17 @@ export function structuredMatch(left, right) {
   // 仍视为同一事件候选；后续增量状态再区分“新进展”和“持续讨论”。
   if (trigger === 0 && whoMatch === 1 && objectMatch === 1 && time >= 0.5) trigger = 0.8;
   const score = Math.round(30 * whoMatch + 25 * objectMatch + 20 * trigger + 10 * action + 10 * time + 5 * entity);
+  // A bare family label such as "Gemini" can refer to a specific same-period
+  // launch, but it is too vague to auto-merge with a named variant. Surface it
+  // for review while keeping the events separate in the ranked list.
+  if (genericModelPair) {
+    return { score: Math.max(score, EVENT_RESOLUTION_POLICY.reviewScore), method: 'model-family-review' };
+  }
   // 同一主体、同一对象、同一时间窗口且触发词仍有明显重合时，通常只是
   // 不同来源对同一发布/回应事件的拆分标注。保留动作差异，交给事件状态
   // 表达“新进展”，不要把它们拆成并列热榜事件。
-  if (whoMatch === 1 && objectMatch === 1 && time >= 0.5 && trigger >= 0.6) {
+  const actionsCompatible = action > 0;
+  if (whoMatch === 1 && objectMatch === 1 && time >= 0.5 && trigger >= 0.6 && actionsCompatible) {
     return { score: Math.max(score, EVENT_RESOLUTION_POLICY.autoMergeScore), method: 'structured-same-object' };
   }
   if (isSameEventContinuity(left, right, objectMatch, trigger)) {
@@ -236,8 +282,8 @@ export function structuredMatch(left, right) {
 export const EVENT_RELATION_TYPES = Object.freeze(['SAME_OCCURRENCE', 'SAME_STORY', 'UNRELATED', 'ROUNDUP']);
 
 export function relationTypeForMatch(match = {}) {
-  if (match.method === 'exact' || match.method === 'structured-same-object') return 'SAME_OCCURRENCE';
-  if (match.method === 'structured-continuity' || match.method === 'structured' || match.method === 'review') return 'SAME_STORY';
+  if (match.method === 'exact' || match.method === 'structured-same-object' || match.method === 'model-family-unique') return 'SAME_OCCURRENCE';
+  if (match.method === 'structured-continuity' || match.method === 'structured' || match.method === 'review' || match.method === 'model-family-review') return 'SAME_STORY';
   return 'UNRELATED';
 }
 
@@ -252,10 +298,12 @@ function stableValue(records, field) {
 
 function aggregate(records) {
   const entityKeys = [...new Set(records.flatMap((record) => record.entityKeys || []))];
+  const genericModelRecord = records.find((record) => MODEL_FAMILIES.includes(String(record.objectKey || '').replace(/[^a-z0-9]/gi, '').toLowerCase()));
+  const specificModelRecord = genericModelRecord && records.find((record) => uniqueSpecificModelVariant(records, genericModelRecord, record));
   return {
     whoKey: stableValue(records, 'whoKey'),
-    objectKey: stableValue(records, 'objectKey'),
-    objectLabel: stableValue(records, 'objectLabel'),
+    objectKey: specificModelRecord?.objectKey || stableValue(records, 'objectKey'),
+    objectLabel: specificModelRecord?.objectLabel || stableValue(records, 'objectLabel'),
     triggerKey: stableValue(records, 'triggerKey'),
     topicLabel: stableValue(records, 'topicLabel'),
     description: stableValue(records, 'description'),
@@ -267,7 +315,7 @@ function aggregate(records) {
 }
 
 const ACTION_TITLE_LABELS = new Map([
-  ['发布', '发布'], ['更新', '更新'], ['开源', '开源'], ['回应', '回应'], ['争议回应', '回应'],
+  ['发布', '发布'], ['更新', '更新'], ['产品更新', '更新'], ['开源', '开源'], ['回应', '回应'], ['争议回应', '回应'],
   ['评论', '评论'], ['质疑', '质疑'], ['收购', '收购'], ['融资', '融资'], ['裁员', '裁员'],
 ]);
 
@@ -289,11 +337,22 @@ function trimDescription(value) {
 /** Create a stable event-semantic title; source headlines are intentionally excluded. */
 export function buildEventTitle(record = {}) {
   const who = displayLabel(record.whoLabel || record.whoKey);
-  const structuredTopic = record.objectLabel || record.topicLabel;
+  const objectLabel = String(record.objectLabel || '').trim();
+  const topicLabel = String(record.topicLabel || '').trim();
+  const compactObject = objectLabel.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const isModelObject = MODEL_FAMILIES.some((family) => compactObject.startsWith(family) && /\d/.test(compactObject));
+  const compactTopic = topicLabel.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const isReleaseAction = ['发布', '更新', '产品更新', '开源'].includes(String(record.actionType || '').trim());
+  const modelMismatch = isModelObject && !isReleaseAction && topicLabel && !compactTopic.includes(compactObject);
+  const structuredTopic = modelMismatch ? topicLabel : (objectLabel || topicLabel);
   const compactKey = String(record.objectKey || record.triggerKey || '').split('|').filter(Boolean);
-  const keyTopic = compactKey.length <= 3 ? compactKey.join('、') : '';
+  const keyTopic = !modelMismatch && compactKey.length <= 3 ? compactKey.join('、') : '';
   const topic = displayLabel(structuredTopic || keyTopic);
   const action = ACTION_TITLE_LABELS.get(String(record.actionType || '').trim());
+  if (modelMismatch && who && topic) {
+    const readableTopic = topic.replace(/aiagent/gi, 'AI Agent').replace(/api/gi, 'API');
+    return `${who}${readableTopic}`;
+  }
   if (who && topic && action) return `${who}${action}${topic}`;
   if (who && topic) return `${who}：${topic}`;
   if (topic && action) return `${action}${topic}`;
@@ -341,7 +400,10 @@ function buildGroups(reports) {
     const candidateGroups = new Set(keysOf(report).flatMap((key) => [...(index.get(key) || [])]));
     for (const group of candidateGroups) {
       const candidate = group.records.reduce((winner, member) => {
-        const match = structuredMatch(report, member);
+        const match = uniqueSpecificModelVariant(reports, report, member)
+          || uniqueSpecificModelVariant(reports, member, report)
+          ? { score: EVENT_RESOLUTION_POLICY.autoMergeScore, method: 'model-family-unique' }
+          : structuredMatch(report, member);
         return !winner || match.score > winner.score ? { ...match, member } : winner;
       }, null);
       if (!best || candidate.score > best.score) best = { ...candidate, group };
@@ -502,7 +564,7 @@ export function resolveEventShadow({ batch, hotspots = [], legacyClusters = [], 
   return {
     schema_version: 1,
     resolver_version: 'shadow-v1',
-    algorithm_version: 'structured-v1',
+    algorithm_version: 'structured-v2',
     mode: 'shadow',
     generated_at: new Date().toISOString(),
     batch_id: batch?.id || null,

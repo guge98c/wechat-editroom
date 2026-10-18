@@ -626,7 +626,7 @@ export async function runResearchPipeline({ gateway, store, batchId, provider, w
     onProgress(`稳定事件解析完成：${shadowResult.shadow.event_count} 组，待复核 ${shadowResult.differences.review_queue.length} 条`);
   } catch (error) {
     const message = String(error?.message || error);
-    writeFile(shadowPath, JSON.stringify({ schema_version: 1, resolver_version: 'stable-v1', algorithm_version: 'structured-v1', mode: 'stable', generated_at: new Date().toISOString(), batch_id: batch.id, status: 'error', error: message }, null, 2));
+    writeFile(shadowPath, JSON.stringify({ schema_version: 1, resolver_version: 'stable-v1', algorithm_version: 'structured-v2', mode: 'stable', generated_at: new Date().toISOString(), batch_id: batch.id, status: 'error', error: message }, null, 2));
     writeFile(shadowDiffPath, JSON.stringify({ status: 'error', error: message }, null, 2));
     throw Object.assign(new Error(`稳定事件解析失败：${message}`), { stage: 'research-event-resolution' });
   }

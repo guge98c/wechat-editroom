@@ -40,16 +40,22 @@ function normalizeEventCard(raw) {
   };
 }
 
-export async function generateEventCards({ gateway, store, clusters, batchId, provider, workspaceRoot, onProgress = () => {} }) {
+export async function generateEventCards({ gateway, store, clusters, batchId, provider, workspaceRoot, onProgress = () => {}, onCard = () => {}, onFailure = () => {} }) {
   const { prompt: eventCardSystem } = selectionPrompt({ workspaceRoot, skillName: 'event-card-generator' });
   const providerConfig = gateway.config.providers[provider || gateway.config.defaultProvider];
   const cards = new Map();
-  const failed = [];
+  const failuresByEvent = new Map();
   const chunkSize = Math.max(1, Math.min(6, Number(providerConfig.eventCardChunkSize) || 6));
   const concurrency = Math.max(1, Math.min(10, Number(providerConfig.eventCardConcurrency) || Number(providerConfig.taggingConcurrency) || 4));
   const chunks = [];
   for (let i = 0; i < clusters.length; i += chunkSize) chunks.push(clusters.slice(i, i + chunkSize));
-  async function processChunk(chunk, label, retry = false) {
+  async function markFailure(event, error) {
+    const failure = { event_id: event.event_id, error: String(error?.message || error || '事件卡生成失败') };
+    failuresByEvent.set(event.event_id, failure);
+    onFailure(event, failure);
+    onProgress(`事件 ${event.event_id} 事件卡生成失败：${failure.error}`);
+  }
+  async function processChunk(chunk, label, retryPass = false) {
     onProgress(`事件卡生成 ${label}（已完成 ${cards.size}/${clusters.length}）`);
     const input = chunk.map((event) => ({
       event_id: event.event_id,
@@ -66,41 +72,51 @@ export async function generateEventCards({ gateway, store, clusters, batchId, pr
         summary: article.summary || '',
       })),
     }));
-    const result = await gateway.complete({ provider, purpose: 'event-card', batchId, jsonMode: true,
-      maxOutputTokens: Math.min(retry ? 2500 : 4500, providerConfig.maxOutputTokens),
-      messages: [
-        { role: 'system', content: eventCardSystem, protected: true },
-        { role: 'user', content: `${retry ? '【极简重试】每个字符串不超过40个汉字，严格闭合JSON。\n' : ''}${JSON.stringify(input)}`, protected: true },
-      ] });
+    let result;
+    try {
+      result = await gateway.complete({ provider, purpose: 'event-card', batchId, jsonMode: true,
+        maxOutputTokens: Math.min(retryPass ? 2500 : 4500, providerConfig.maxOutputTokens),
+        messages: [
+          { role: 'system', content: eventCardSystem, protected: true },
+          { role: 'user', content: `${retryPass ? '【失败项单条重试】只处理当前事件；每个字符串不超过40个汉字，严格闭合JSON。\n' : ''}${JSON.stringify(input)}`, protected: true },
+        ] });
+    } catch (error) {
+      if (chunk.length > 1) {
+        const middle = Math.ceil(chunk.length / 2);
+        onProgress(`事件卡请求失败；拆分为 ${middle} + ${chunk.length - middle} 条继续处理：${error.message}`);
+        await processChunk(chunk.slice(0, middle), `${label}.1`, retryPass);
+        await processChunk(chunk.slice(middle), `${label}.2`, retryPass);
+        return;
+      }
+      await markFailure(chunk[0], error);
+      return;
+    }
     let parsed;
     try { parsed = parseModelJson(result, store); }
     catch (error) {
       if (chunk.length > 1) {
         const middle = Math.ceil(chunk.length / 2);
         onProgress(`事件卡输出无效；自动拆分为 ${middle} + ${chunk.length - middle} 条重试`);
-        await processChunk(chunk.slice(0, middle), `${label}.1`);
-        await processChunk(chunk.slice(middle), `${label}.2`);
+        await processChunk(chunk.slice(0, middle), `${label}.1`, retryPass);
+        await processChunk(chunk.slice(middle), `${label}.2`, retryPass);
         return;
       }
-      if (!retry) { onProgress('单张事件卡仍无效，切换极简结构重试'); await processChunk(chunk, `${label}.R`, true); return; }
-      failed.push({ event_id: chunk[0].event_id, error: error.message });
-      onProgress(`事件 ${chunk[0].event_id} 事件卡生成失败，已跳过：${error.message}`);
+      await markFailure(chunk[0], error);
       return;
     }
     const returned = new Set();
     for (const rawCard of Array.isArray(parsed.items) ? parsed.items : []) {
+      if (!rawCard || typeof rawCard !== 'object') continue;
       const event = chunk.find((item) => item.event_id === rawCard.event_id);
       if (!event || !String(rawCard.conclusion || '').trim()) continue;
       returned.add(event.event_id);
-      cards.set(event.event_id, normalizeEventCard(rawCard, event));
+      const card = normalizeEventCard(rawCard, event);
+      cards.set(event.event_id, card);
+      failuresByEvent.delete(event.event_id);
+      onCard(event, card);
     }
     const missing = chunk.filter((event) => !returned.has(event.event_id));
-    if (missing.length && !retry) {
-      onProgress(`模型漏回 ${missing.length} 张事件卡；切换极简结构重试`);
-      await processChunk(missing, `${label}.R`, true);
-    } else {
-      for (const event of missing) failed.push({ event_id: event.event_id, error: '模型未返回该事件的事件卡' });
-    }
+    for (const event of missing) await markFailure(event, '模型未返回该事件的有效事件卡');
     onProgress(`事件卡 ${label} 完成（累计 ${cards.size}/${clusters.length}）`);
   }
   // 持续补位的工作池：与打标一致，某批完成后立即领取下一批，避免被慢请求阻塞。
@@ -114,8 +130,21 @@ export async function generateEventCards({ gateway, store, clusters, batchId, pr
   const workerCount = Math.min(concurrency, chunks.length);
   onProgress(clusters.length ? `准备生成事件卡 ${clusters.length} 个：${chunks.length} 批，并发 ${workerCount}` : '本批没有需要生成事件卡的事件');
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  const retryEvents = [...failuresByEvent.keys()].map((eventId) => clusters.find((event) => event.event_id === eventId)).filter(Boolean);
+  if (retryEvents.length) {
+    onProgress(`首轮完成，单条重试 ${retryEvents.length} 个失败事件`);
+    let nextRetryIndex = 0;
+    async function retryWorker() {
+      while (nextRetryIndex < retryEvents.length) {
+        const event = retryEvents[nextRetryIndex++];
+        await processChunk([event], `失败项重试 ${nextRetryIndex}/${retryEvents.length}`, true);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(concurrency, retryEvents.length) }, () => retryWorker()));
+  }
   for (const event of clusters) { const card = cards.get(event.event_id); if (card) event.card = card; }
-  onProgress(`事件卡生成完成：${cards.size}/${clusters.length} 个事件`);
+  const failed = [...failuresByEvent.values()];
+  onProgress(`事件卡生成完成：${cards.size}/${clusters.length} 个事件${failed.length ? `，${failed.length} 个事件单条重试后仍失败` : ''}`);
   return { cards, failed };
 }
 
@@ -142,20 +171,37 @@ export async function ensureBatchEventCards({ gateway, store, batchId, provider,
   const clusters = stableEvents.filter((event) => !skippedEventIds.has(event.event_id));
   const cached = regenerate ? null : readEventCardsFile(eventCardsPath);
   const cachedCards = new Map((cached?.items || []).map((item) => [item.event_id, item]));
+  const clusterIds = new Set(clusters.map((event) => String(event.event_id)));
+  const failedById = new Map((cached?.failed || []).filter((item) => clusterIds.has(String(item.event_id))).map((item) => [String(item.event_id), item]));
   const requestedEventIds=Array.isArray(eventIds)?new Set(eventIds.map(String)):null;
   const missing = clusters.filter((event) => !cachedCards.has(event.event_id) && (!requestedEventIds || requestedEventIds.has(event.event_id)));
   let failed = [];
+  const persistSnapshot = () => {
+    const items = clusters.filter((event) => cachedCards.has(event.event_id)).map((event) => ({ event_id: event.event_id, title: event.representative_title, ...cachedCards.get(event.event_id) }));
+    const output = { generated_at: new Date().toISOString(), total_events: clusters.length, failed: [...failedById.values()], items };
+    writeFile(eventCardsPath, JSON.stringify(output, null, 2));
+  };
   if (missing.length) {
-    const result = await generateEventCards({ gateway, store, clusters: missing, batchId, provider, workspaceRoot, onProgress });
+    persistSnapshot();
+    const result = await generateEventCards({ gateway, store, clusters: missing, batchId, provider, workspaceRoot, onProgress,
+      onCard: (event, card) => {
+        cachedCards.set(event.event_id, card);
+        failedById.delete(event.event_id);
+        for (const failure of store.listPipelineFailures?.(batchId, { statuses: ['open', 'retrying'], stages: ['event-card'] }) || []) {
+          if (String(failure.detail?.eventId || failure.object_key.replace(/^event:/, '')) === String(event.event_id)) store.resolvePipelineFailure(failure.id);
+        }
+        persistSnapshot();
+      },
+      onFailure: (event, failure) => {
+        failedById.set(event.event_id, failure);
+        store.recordPipelineFailure?.({ batchId, runId, stage: 'event-card', objectType: 'event',
+          objectKey: `event:${event.event_id}`, title: event.representative_title || event.event_id,
+          errorCode: 'event_card_failed', errorMessage: failure.error,
+          detail: { eventId: event.event_id, reportCount: event.report_count || event.articles?.length || 0,
+            hotspotIds: (event.articles || []).map((item) => item.id).filter(Boolean) } });
+        persistSnapshot();
+      } });
     failed = result.failed;
-    for (const failure of failed) {
-      const event = missing.find((item) => item.event_id === failure.event_id);
-      store.recordPipelineFailure?.({ batchId, runId, stage: 'event-card', objectType: 'event',
-        objectKey: `event:${failure.event_id}`, title: event?.representative_title || failure.event_id,
-        errorCode: 'event_card_failed', errorMessage: failure.error,
-        detail: { eventId: failure.event_id, reportCount: event?.report_count || event?.articles?.length || 0,
-          hotspotIds: (event?.articles || []).map((item) => item.id).filter(Boolean) } });
-    }
     for (const event of missing) {
       if (event.card) cachedCards.set(event.event_id, { event_id: event.event_id, title: event.representative_title, ...event.card });
     }
@@ -166,8 +212,8 @@ export async function ensureBatchEventCards({ gateway, store, batchId, provider,
     const card = cachedCards.get(event.event_id);
     if (card) event.card = normalizeEventCard(card, event);
   }
-  const items = clusters.filter((event) => event.card).map((event) => ({ event_id: event.event_id, title: event.representative_title, ...event.card }));
-  writeFile(eventCardsPath, JSON.stringify({ generated_at: new Date().toISOString(), total_events: clusters.length, failed, items }, null, 2));
+  failed = [...failedById.values()];
+  persistSnapshot();
   try {
     const stat = fs.statSync(eventCardsPath);
     store.upsertArtifact({ batchId, kind: '事件事实卡', name: 'event-cards.json', path: eventCardsPath, size: stat.size, modifiedAt: stat.mtime.toISOString() });

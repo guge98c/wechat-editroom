@@ -6,6 +6,7 @@ import { buildBatchPipelineStatus } from '../../../features/batches/index.mjs';
 import { getBatchDeleteImpact, deleteBatchPermanently } from '../../../features/batches/index.mjs';
 import { buildEventResolutionOperationsMetrics, readEventResolutionReview } from '../../../features/research/index.mjs';
 import { buildTopicScoreOperationsMetrics } from '../../../features/research/index.mjs';
+import { displayItemsForTopicGroups } from '../../../features/research/index.mjs';
 import { selectBatchSourceGroups } from '../../../features/collection/application/batch-source-selection.mjs';
 import { inspectRsshubEnvironment } from '../../integrations/rsshub-installer.mjs';
 import { respond, boundedLimit } from '../route-helpers.mjs';
@@ -235,7 +236,11 @@ export async function handleBatchRoutes({ request, response, pathname, searchPar
     atlas.eventHotlist = (eventHeatRanking.items || []).map((item) => ({ ...item, editorial_category: item.editorialCategory || '' }));
     atlas.eventHeatRankings = Object.fromEntries(Object.entries(eventHeatRanking.categoryRankings || {}).map(([category, board]) => [category, {
       ...board,
-      items: (board.items || []).map((item) => ({ ...item, editorial_category: item.editorialCategory || '' })),
+      items: displayItemsForTopicGroups(board.items || [], eventHeatRanking.topicGroups || []).map((item) => ({
+        ...item,
+        editorial_category: item.editorialCategory || '',
+        childItems: (item.childItems || []).map((child) => ({ ...child, editorial_category: child.editorialCategory || '' })),
+      })),
     }]));
     atlas.eventHotlistGeneratedAt = eventHeatRanking.generatedAt || null;
     try {

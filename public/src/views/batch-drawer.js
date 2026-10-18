@@ -346,7 +346,7 @@ export async function pollJob(id) {
         return pollJob(autoJob.id);
       } catch (error) { toast(`采集完成，但自动流程启动失败：${error.message}`, "error"); }
     }
-    const successText = job.type === "breaking-analysis" ? "突发事实基座和双评分已生成，请确认分流" : job.type === "research" || job.type === "auto" ? "事件研判完成，已进入选题池" : job.type === "collect" ? "采集完成" : job.type === "event-cards" ? "事件卡已生成" : job.type === "article" ? "完整成稿链已完成" : job.type === "typeset" ? "公众号排版 HTML 已完成" : "AI 打标完成";
+    const successText = job.type === "breaking-analysis" ? "突发事实基座和双评分已生成，请确认分流" : job.type === "research" || job.type === "auto" ? "事件研判完成，已进入事件热榜" : job.type === "collect" ? "采集完成" : job.type === "event-cards" ? "事件卡已生成" : job.type === "article" ? "完整成稿链已完成" : job.type === "typeset" ? "公众号排版 HTML 已完成" : "AI 打标完成";
     toast(job.status === "completed" ? successText : `任务失败：${job.error || "未取得有效结果"}`);
     await loadOverview();
     if (document.querySelector(".nav-item.active")?.dataset.view === "overview") {
@@ -355,7 +355,7 @@ export async function pollJob(id) {
     }
     if (job.status === "completed" && (job.type === "research" || job.type === "auto")) {
       $("#batch-drawer").close();
-      window.go("topics");
+      window.go("overview");
     } else if (job.status === "completed" && job.type === "article") {
       await window.go("editor");
       $("#writing-candidate").value = String(job.candidateId);
