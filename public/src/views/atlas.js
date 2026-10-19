@@ -482,6 +482,21 @@ function renderEventHotlist() {
     const platformImpact = item.platformImpactAvailable
       ? `<span title="${escapeHtml(platformDetail)}">平台影响 +${Number(item.platformImpact || 0).toFixed(1)}/10</span>`
       : '<span title="当前事件没有可用的平台计数">平台指标缺失</span>';
+    if (item.displayKind === "topic_group") {
+      const children = (item.childItems || []).map((child) => `<div class="event-hotlist-topic-child">
+        <button class="outline-button" data-event-detail="${escapeHtml(child.eventId)}">${escapeHtml(child.title || child.eventId)} · 单项第 ${child.rank} 名 · ${child.scoreValue ?? "—"} 分</button>
+        <span>${Number(child.reportCount || 0)} 条报道</span>
+        <button class="ink-button" data-event-hotlist-pool="${escapeHtml(child.eventId)}" data-event-tracks="article">加入文章池</button>
+        <button class="outline-button" data-event-hotlist-pool="${escapeHtml(child.eventId)}" data-event-tracks="social_cards">加入图文池</button>
+      </div>`).join("");
+      return `<article class="event-hotlist-item event-hotlist-topic-group">
+        <div class="event-hotlist-rank"><b>${item.rank}</b><span>主题</span></div>
+        <div class="event-hotlist-main"><h4>${categoryBadge(item)} ${escapeHtml(item.title || "相关主题")}</h4>
+          <div class="event-hotlist-meta"><span>${item.childItems.length} 个相关事件</span><span>合计 ${item.reportCount} 条报道</span><span>${scopes}</span></div>
+          <details class="event-hotlist-topic-members"><summary>查看子事件</summary>${children}</details>
+        </div><div class="event-hotlist-score"><strong>${item.scoreValue ?? item.heatScore}</strong><span>主题分取子事件最高值</span></div>
+      </article>`;
+    }
     return `<article class="event-hotlist-item event-hotlist-${escapeHtml(item.state || "continuing")}" data-event-detail="${escapeHtml(item.eventId)}" tabindex="0" aria-label="查看事件详情：${escapeHtml(item.title || item.eventId)}">
       <div class="event-hotlist-rank"><b>${item.rank}</b><span>${escapeHtml(delta)}</span></div>
       <div class="event-hotlist-main"><h4>${categoryBadge(item)} ${escapeHtml(item.title || item.eventId)}</h4><div class="event-hotlist-meta"><span class="event-state">${escapeHtml(stateLabel)}</span><span>评分 ${item.scoreValue ?? item.heatScore}</span>${platformImpact}<span>${item.reportCount} 条报道</span><span>${item.sourceCount} 个来源</span><span>${escapeHtml(scopes)}</span></div><div class="event-hotlist-reasons">${reason}</div></div>
