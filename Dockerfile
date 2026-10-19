@@ -7,7 +7,11 @@
 #   3) 监听补丁：127.0.0.1 -> 0.0.0.0（允许 NAS 局域网与容器外访问）
 #      补丁写在 Dockerfile 里，上游更新后重新构建会自动重打，不会被覆盖
 
-FROM node:24-slim
+# 钉死基础镜像版本：官方 node:24.22.0-slim 发布损坏，
+# /usr/local/bin/node 仅 4MB（正常 126MB）、/usr/local/bin/docker-entrypoint.sh 为 0 字节，
+# node 一执行就 Segmentation fault，构建出的镜像启动即崩（exec format error / 退出码 139）。
+# 24.21.0-slim 已实测正常。等官方修复 24.22 后再放开浮动 tag。
+FROM node:24.21.0-slim
 
 ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
     PUPPETEER_SKIP_DOWNLOAD=true \
