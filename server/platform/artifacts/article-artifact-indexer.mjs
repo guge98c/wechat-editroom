@@ -7,8 +7,9 @@ const ARTICLE_FILES = new Map([
   ['02-outline.md', '文章大纲'],
   ['03-titles.md', '标题候选'],
   ['04-draft.md', '文章初稿'],
-  ['05-humanized.md', '去 AI 稿'],
+  ['05-humanized.md', '表达精修稿'],
   ['06-reviewed.md', '审阅稿'],
+  ['07-length-adjusted.md', '字数调整稿'],
   ['08-seo-optimized.md', 'SEO 优化稿'],
   ['09-final.md', '文章终稿'],
   ['article.ai.draft.html', '排版 HTML 初稿'],
@@ -73,6 +74,9 @@ function titleFromText(text, extension, metadata) {
 }
 
 function titleFromSocialCopy(text) {
+  const explicitTitle = String(text || '').split(/\r?\n/, 1)[0]
+    .match(/^(?:公众号发布标题|小红书笔记标题)\s*[:：]\s*(.+)$/)?.[1];
+  if (explicitTitle) return stripMarkup(explicitTitle);
   const lines = String(text || '').split(/\r?\n/).map((line) => stripMarkup(line.replace(/^#+\s*/, ''))).filter((line) => line && !/^[-*_]{3,}$/.test(line));
   const heading = String(text || '').split(/\r?\n/).map((line) => line.match(/^#{1,6}\s+(.+?)\s*$/)?.[1] || '').map(stripMarkup).find(Boolean);
   if (heading) return heading;

@@ -60,6 +60,51 @@ export function compositeSourceText(candidate,{maxChars=48000,perSourceChars=400
 
 export function authorizedWritingBrief(brief) { const safe={...brief};delete safe.sourceText;return safe; }
 
+function articleMaterialView(materialBrief = {}) {
+  const material = materialBrief && typeof materialBrief === 'object' ? materialBrief : {};
+  return Object.fromEntries(['action', 'affected_group', 'conflict', 'reader_consequence', 'reader_action']
+    .map((key) => [key, material[key]])
+    .filter(([, value]) => value != null && String(value).trim() !== ''));
+}
+
+export function articleFactAuthorityView(factBase = {}) {
+  // Daily/tutorial documents use their own evidence schemas during manual review.
+  if (!Array.isArray(factBase?.claims)) return { materials: factBase };
+  const claims = Array.isArray(factBase?.claims) ? factBase.claims : [];
+  return {
+    claims: claims.filter((claim) => claim && typeof claim === 'object').map((claim) => ({
+      id: claim.id,
+      claim: claim.claim,
+      subject: claim.subject || '',
+      status: claim.status,
+      sourceUrl: claim.sourceUrl || claim.source_url || '',
+      sourceTitle: claim.sourceTitle || claim.source_title || '',
+      sourceType: claim.sourceType || claim.source_type || '',
+      attribution: claim.attribution || '',
+      attributionRequired: claim.attributionRequired ?? claim.attribution_required ?? false,
+      evidence: claim.evidence || '',
+      publishedAt: claim.publishedAt || claim.published_at || '',
+      boundary: claim.boundary || '',
+      ...(claim.status === 'opinion' && claim.evidence ? { reasoningBasis: claim.evidence } : {}),
+    })),
+  };
+}
+
+/** Planning sees the article's argument and usable evidence, not duplicated editorial risk metadata. */
+export function buildArticlePlanningView(brief = {}) {
+  const materialBrief = brief?.materialBrief || brief?.material_brief || {};
+  return {
+    topic: brief?.topic,
+    angle: brief?.angle,
+    thesis: brief?.thesis,
+    audience: brief?.audience || brief?.targetAudience || brief?.target_audience,
+    article_type: brief?.articleType || brief?.article_type,
+    material_brief: articleMaterialView(materialBrief),
+    adopted_research_points: brief?.adoptedResearchPoints || brief?.adopted_research_points || [],
+    facts: articleFactAuthorityView(brief?.factBase || brief?.fact_base || {}),
+  };
+}
+
 const DRAFT_OUTLINE_SECTION_ENDINGS = new Set(['流量规划','读者收益','信息增量','实用增量','增长承接','来源','剩余风险','停止原因','写作立场','文章素材简报']);
 
 function outlineHeading(line) {
@@ -191,9 +236,18 @@ export function unverifiedFactBaseIssue(factBase) {
   return `事实基座中所有事实性主张均未核实${missing?`（待补：${missing}）`:''}，无法成稿；请抓取可核对的原文或回编辑室调整命题后再试`;
 }
 
-export const ARTICLE_LENGTH_RANGE=Object.freeze({min:1300,max:2000});
+export const ARTICLE_LENGTH_RANGE=Object.freeze({min:1300,max:1800,targetVisibleChars:1600});
 
 export function selectWriterSkill(candidate={}) {
+  const rawMaterialBrief=candidate.materialBrief||candidate.material_brief||candidate.editorial?.material_brief||candidate.editorial?.materialBrief;
+  let materialBrief=rawMaterialBrief;
+  if(typeof rawMaterialBrief==='string'){
+    try{materialBrief=JSON.parse(rawMaterialBrief);}catch{materialBrief={};}
+  }
+  const explicitType=String(candidate.article_type||candidate.articleType||materialBrief?.article_type||'').trim();
+  if(explicitType&&['wechat-mp-composite','wechat-mp-gossip-chill','wechat-mp-tech-deep','wechat-mp-tech-hotspot','wechat-mp-deep-dive'].includes(explicitType)){
+    return {skill:explicitType,reason:`锁定简报明确指定文章类型 ${explicitType}`,source:'locked_article_type'};
+  }
   if(candidate.composite)return {skill:'wechat-mp-composite',reason:'候选由多个热点组成，需要按共同机制或趋势组织'};
   const angleText=[candidate.angle,candidate.thesis,candidate.editorial?.research_basis,candidate.editorial?.confirmed_facts].filter(Boolean).join(' ');
   const allText=[candidate.hotspot_title,candidate.category,angleText].filter(Boolean).join(' ');
@@ -219,33 +273,37 @@ export function replaceArticleTitle(article, title) {
   return `# ${nextTitle}\n\n${source}`.trim();
 }
 
-export function buildDraftUserPrompt(selectedTitle, brief, outline) {
+export function buildArticleBriefView(brief = {}) {
   const materialBrief = brief?.materialBrief || brief?.material_brief || {};
-  const articleTask = {
+  return {
     topic: brief?.topic,
     angle: brief?.angle,
     thesis: brief?.thesis,
-    audience: brief?.audience || brief?.targetAudience,
+    audience: brief?.audience || brief?.targetAudience || brief?.target_audience,
     article_type: brief?.articleType || brief?.article_type,
-    distribution_lane: brief?.distributionLane || brief?.distribution_lane,
-    reader_stake: brief?.readerStake || brief?.reader_stake,
-    material_brief: materialBrief,
+    material_brief: articleMaterialView(materialBrief),
+    research_basis: brief?.researchBasis || brief?.research_basis || '',
+    writing_stance: brief?.writingStance || brief?.writing_stance || '',
+    reader_stake: brief?.readerStake || brief?.reader_stake || '',
+    baseline_change: brief?.baselineChange || brief?.baseline_change || materialBrief.baseline_change || '',
+    counter_evidence: brief?.counterEvidence || brief?.counter_evidence || materialBrief.counter_evidence || [],
     adopted_research_points: brief?.adoptedResearchPoints || brief?.adopted_research_points || [],
     rejected_angles: brief?.rejectedAngles || brief?.rejected_angles || [],
-  };
-  const authority = {
-    fact_base: brief?.factBase || brief?.fact_base || {},
-    publication_claim_register: brief?.publicationClaimRegister || brief?.publication_claim_register || [],
-  };
-  const internalConstraints = {
-    writing_stance: brief?.writingStance || brief?.writing_stance || 'analysis',
-    citation_policy: brief?.citationPolicy || brief?.citation_policy || 'cluster',
-    evidence_boundary: materialBrief?.evidence_boundary || brief?.evidenceBoundary || brief?.evidence_boundary || '',
-    forbidden_claims: brief?.forbiddenClaims || brief?.forbidden_claims || [],
-    experience_required: brief?.experienceRequired ?? brief?.experience_required ?? false,
+    forbidden_claims: brief?.forbiddenClaims || brief?.forbidden_claims || '',
+    author_opinions: brief?.authorOpinions || brief?.author_opinions || '',
     confirmed_experiences: brief?.confirmedExperiences || brief?.confirmed_experiences || '',
   };
-  return `标题：${selectedTitle}\n\n文章任务（可写目标）：\n${JSON.stringify(articleTask)}\n\n事实与来源授权（只能从这里取事实）：\n${JSON.stringify(authority)}\n\n内部约束（只用于约束写作，不得逐字输出）：\n${JSON.stringify(internalConstraints)}\n\n当前写作立场只改变表达方式，不改变事实状态、来源边界、禁止主张或发布门禁。\n\n所有文章都以点击、前 200 字留存、完读和可转述判断为基线；必须把流量规划和读者收益落到正文，普通成稿安排 3–5 个 H2、至少两次中段推进，并控制外部案例和数据只为核心判断服务。不要把读者收益机械扩写成独立清单章节。\n\n写作时必须优先覆盖采用的研判拓展点，将其转化为事实解释、利益/成本分析、事件间关系或可验证的观点边界。只把事实基座中 status=verified 的主张写成确定事实；disputed、unverified 和 restricted_claims 必须按明确归因、限定或删除处理。不要把机器审计信息机械泄漏成逐句“据来源”。\n\n规划元信息隔离规则：下面的“文章结构视图”只描述章节和段落意图，不是正文素材。不要输出其中的“写作要求、禁写项、H2 编号、前置检查或内部术语”；也不要原样写出“本文不写”“只能当作提问的起点”“这不能当作行业统计”等规划式句子。需要保留证据边界时，改写成自然的来源限定和事实表述。\n\n文章结构视图（仅供执行，不得原样复述）：\n${buildDraftOutlineView(outline)}`;
+}
+
+export function buildDraftUserPrompt(selectedTitle, brief, options = {}) {
+  const authority = articleFactAuthorityView(brief?.factBase || brief?.fact_base || {});
+  return JSON.stringify({
+    working_title: selectedTitle,
+    reader_context: options?.readerContext || {},
+    brief: buildArticleBriefView(brief),
+    facts: authority,
+    length: options?.length || ARTICLE_LENGTH_RANGE,
+  });
 }
 
 export function buildResearchCoveragePrompt({ article = '', researchPoints = [], rejectedAngles = [] } = {}) {

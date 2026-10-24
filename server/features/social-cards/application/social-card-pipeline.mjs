@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolvePrompt } from '../../../platform/llm/prompt-registry.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { pathToFileURL } from 'node:url';
@@ -32,7 +33,7 @@ import { getSocialCardPlanRolloutProfile } from '../rendering/social-card-plan-r
 import { socialCardPageBudget, socialCardPageBudgetMessage } from '../rendering/social-card-page-budget.mjs';
 import { acceptSoftDensityOnlyLayoutReport, adaptiveContentPageIndexes, buildSocialCardPlannerFactScope, buildSocialCardPlannerPageScope, layoutAuditPageSummary, softDensityPageIndexes, templateAuditFailurePayload, validateSocialCardDelivery } from '../rendering/social-card-pipeline-contracts.mjs';
 import { contentTypeForSocialRoute, socialStoryboardClassForMaterialType, socialStoryboardSkillForMaterialType } from '../domain/social-routing.mjs';
-import { generateSocialCardCopy } from './social-card-copy.mjs';
+import { formatSocialCardCopyArtifact, generateSocialCardCopy } from './social-card-copy.mjs';
 // 交付门禁继续报告“配套文案话题标签不足”，实现已下沉到渲染契约模块。
 import { NEON_V1_CSS, renderNeonStoryboardSections } from '../rendering/templates/social/neon-v1.mjs';
 import { BRUTALIST_V1_CSS, renderBrutalistStoryboardSections } from '../rendering/templates/social/brutalist-v1.mjs';
@@ -453,7 +454,7 @@ export async function runSocialCardPipeline({ gateway, store, batchId, candidate
     try{
       const split=await gateway.complete({ provider, purpose:'social-card-cover-title-lines', batchId, candidateId, jsonMode:true,
         maxOutputTokens:Math.min(600,providerConfig.maxOutputTokens), messages:[
-          { role:'system', protected:true, content:'你是中文排版编辑。把给定封面标题拆成多行，用于逐行色块堆叠的封面排版。规则：每行视觉宽度必须不超过 8 个汉字宽度——这是硬性限制，优先于其他目标（英文字母、数字、空格按约 0.55 个汉字宽度计，例如 "DeerFlow" 约 4.4、全角标点按 1 计）；按语气与语义边界断行；英文单词、数字、专有名词不得拆开；不得增删或改写任何字符；满足行宽后行数尽量少，通常 2–4 行。示例：标题 "DeerFlow：开源超级智能体框架，处理复杂长周期任务" → {"lines":["DeerFlow：","开源超级智能体","框架，处理复杂","长周期任务"]}。只输出 JSON：{"lines":["第一行","第二行"]}。' },
+          { role:'system', protected:true, content:resolvePrompt('social-cards.cover-title-wrap').text },
           { role:'user', protected:true, content:JSON.stringify({ title:coverTitle }) },
         ] });
       const parsed=cleanCardPlanJson(split.content);
@@ -477,6 +478,8 @@ export async function runSocialCardPipeline({ gateway, store, batchId, candidate
     editorial, cardPlan, disclosure: contentType==='event' ? '据公开素材整理；未核实主张必须保留边界表达' : contentType==='custom' ? '体验性表述来自作者确认；建议性内容未实测' : '基于项目文档整理，未实际运行',
   });
   const copy = copyResult.copy;
+  const publishTitle = copyResult.publishTitle;
+  if (!publishTitle) throw new Error('配套文案缺少公众号发布标题，请重新生成文案');
   const configuredGate=evaluateConfiguredGates(skillRuntime.config,{factBase:contentType==='event'?eventAnalysisRecord.analysis:facts?.data||{},output:copy});
   if(!configuredGate.pass)throw new Error(`图文配置门禁未通过：${configuredGate.issues.map((item)=>item.message).join('；')}`);
 
@@ -507,9 +510,12 @@ export async function runSocialCardPipeline({ gateway, store, batchId, candidate
   let html = renderCurrentStoryboard();
   if (!copy || !/<html\b/i.test(html) || !/class=["'][^"']*\bpage\b/i.test(html)) throw new Error('图文生成产物缺少文案、完整 HTML 或 .page');
   const copyPath = path.join(workdir, 'copy.txt');
+  const publishTitlePath = path.join(workdir, 'publish-title.txt');
   const htmlPath = path.join(workdir, 'my-design.html');
-  writeFile(copyPath, copy); writeFile(htmlPath, html);
-  record('generation', generator.skillName, [copyPath, htmlPath]);
+  writeFile(copyPath, formatSocialCardCopyArtifact({ publishTitle, copy, channelMode }));
+  writeFile(publishTitlePath, publishTitle);
+  writeFile(htmlPath, html);
+  record('generation', generator.skillName, [copyPath, publishTitlePath, htmlPath]);
 
   const auditScript = resolveSkillFile({ workspaceRoot, skillName: generator.skillName, relativePath: 'scripts/layout-audit.mjs' });
   const reportPath = path.join(workdir, 'layout-report.json');
@@ -867,8 +873,8 @@ export async function runSocialCardPipeline({ gateway, store, batchId, candidate
           const scopedAtoms=currentAtoms.atoms.filter((atom)=>plannerPageNumbers.has(Number(atom.page)));
           const scopedPlannerPrompt=buildSocialCardContentPlannerPrompt({facts:plannerFacts,layoutReport:{pages:plannerPages},cardPlan:plannerCardPlan,totalPageCount:cardPlan.length,contentAtoms:scopedAtoms,templateCapabilities:templateCapabilities.capacityProfile,factIndex:scopedFactIndex,contentComponents:plannerComponentPool,maxPages:absoluteMaxPagesForContent,recommendedPages:recommendedPagesForContent,absoluteMaxPages:absoluteMaxPagesForContent,maxOperations:rolloutProfile.maxOperationsPerRound,maxFactBlocksPerRound,maxFactBlocksPerPage});
         const plannerResult=await gateway.complete({provider,purpose:'social-card-content-planner',batchId,candidateId,jsonMode:true,maxOutputTokens:Math.min(6000,providerConfig.maxOutputTokens),messages:[
-          {role:'system',protected:true,content:`${scopedPlannerPrompt}\n\n当前运行阶段：浏览器审计后的内容计划调整。只返回契约规定的 JSON。`},
-          {role:'user',protected:true,content:'请根据系统消息中的目标页上下文返回受控 JSON 操作；操作中的 page 使用 card_plan.page_number 对应的真实页码。'},
+          {role:'system',protected:true,content:`${scopedPlannerPrompt}\n\n${resolvePrompt('social-cards.browser-audit-plan-adjustment').text}`},
+          {role:'user',protected:true,content:resolvePrompt('social-cards.browser-audit-plan-adjustment-user').text},
         ]});
         const operationJson=cleanCardPlanJson(plannerResult.content);
         const schemaResult=validateSocialCardContentPlannerSchema(operationJson);
@@ -1105,7 +1111,7 @@ export async function runSocialCardPipeline({ gateway, store, batchId, candidate
     recordRepairPhase({attempt:attempt + 1,phase:'text-repair',action:'ai-rewrite',changed:false,rerender:false,details:`round=${repairCount}`});
     const repair = await gateway.complete({ provider, purpose:'social-card-layout-repair', batchId, candidateId,
       maxOutputTokens:Math.min(8000, providerConfig.maxOutputTokens), messages:[
-        { role:'system', protected:true, content:`${repairSkillPrompt}\n\n当前是布局修复阶段。只允许调整现有内容块中的文字长度，事实、页面数量、页面顺序、页面类型、页面标题、页面目标、证据引用、内容块数量、内容块顺序、内容块 type 和内容块标题必须保持不变。禁止输出 HTML、CSS、解释或任何非 JSON 内容。\n\n按问题类型调整：\n- underfilled：在原有段落内适度扩写，只能补充事实基座已经提供、且与该段职责直接相关的细节；禁止增加要点、例子、列表条目或内容块，禁止把原段落改写成同义列表。\n- overfilled：缩写原有段落，删除赘述和重复表达；不得删除内容块、列表条目或拆页。\n- overflow/clipped：在原有内容块内缩短文字并合并重复表达；不得新增、拆分、移动或改变内容块。\n- invalid_page_grid_structure/missing_content_stack/empty_page_body：原样保留 card_plan；结构问题由确定性渲染器处理，不得重构内容。\n\n只允许修改 content，或 items/headers/rows 现有成员中的文字；不得增删数组成员。code 内容不得修改。stats 数据卡的 num 字段不超过 6 个字符。\n\n禁止：新增事实、要点、例子、内容块或列表项；隐藏溢出、缩放、伪元素、空白卡、space-between、小于 11px 正文；把指令性描述写入内容字段。\n\n只输出 JSON：可以直接是 card_plan 数组，也可以是包含 card_plan 字段的对象。` },
+        { role:'system', protected:true, content:`${repairSkillPrompt}\n\n${resolvePrompt('social-cards.layout-repair').text}` },
         { role:'user', protected:true, content:JSON.stringify({ report, card_plan:cardPlan, previous_repair_rejected:repairGuardIssues, copy, topic:candidate.hotspot_title, content_type:contentType }) },
       ] });
     let repairJson;
@@ -1168,9 +1174,9 @@ export async function runSocialCardPipeline({ gateway, store, batchId, candidate
   if (!delivery.valid) throw new Error(`图文交付门禁未通过：${delivery.issues.join('；')}`);
   record('delivery-gate', 'fixed-program', deliveryPath);
 
-  for (const [kind, file] of [['图文事实清单',factPath],['图文事实候选索引',factIndexPath],['图文原始卡片规划',originalPlanPath],['图文卡片重排记录',reflowPath],['图文内容原子快照',contentAtomsPath],['图文内容计划调整记录',contentPlanAdjustmentsPath],['图文内容计划基线',planBaselinePath],['图文联合装箱审计',jointPackingAuditPath],['图文卡片规划',planPath],['图文配套文案',copyPath],['图文设计 HTML',htmlPath],['图文初始布局审计',initialReportPath],['图文布局审计',reportPath],['图文交付报告',deliveryPath],['图文主题快照',themeSnapshotPath],['图文模板指标',templateMetricsPath]]) addArtifact(store,batchId,candidateId,kind,file,{rootRunId,workflowRunId,stageId:'social-card-pipeline'});
+  for (const [kind, file] of [['图文事实清单',factPath],['图文事实候选索引',factIndexPath],['图文原始卡片规划',originalPlanPath],['图文卡片重排记录',reflowPath],['图文内容原子快照',contentAtomsPath],['图文内容计划调整记录',contentPlanAdjustmentsPath],['图文内容计划基线',planBaselinePath],['图文联合装箱审计',jointPackingAuditPath],['图文卡片规划',planPath],['公众号发布标题',publishTitlePath],['图文配套文案',copyPath],['图文设计 HTML',htmlPath],['图文初始布局审计',initialReportPath],['图文布局审计',reportPath],['图文交付报告',deliveryPath],['图文主题快照',themeSnapshotPath],['图文模板指标',templateMetricsPath]]) addArtifact(store,batchId,candidateId,kind,file,{rootRunId,workflowRunId,stageId:'social-card-pipeline'});
   for (const image of images) addArtifact(store,batchId,candidateId,'图文卡片 PNG',image,{rootRunId,workflowRunId,stageId:'social-card-pipeline'});
   store.updateCandidateTrack(candidateId, 'social_cards', { status:'completed' });
   onProgress(`图文 6/6：完成，共生成 ${images.length} 张卡片`);
-  return { workdir, copy:copyPath, html:htmlPath, layoutReport:reportPath, deliveryReport:deliveryPath, templateMetrics:templateMetricsPath, contentPlanAdjustments:contentPlanAdjustmentsPath, jointPackingAudit:jointPackingAuditPath, theme:{id:themeDefinition.id,version:themeDefinition.version,hash:themeDefinition.hash}, themeRouting, template:{pack:templateCompatibility.templatePack,source:templateCompatibility.source,fallback:templateCompatibility.fallback,warnings:templateCompatibility.warnings,capacityProfileVersion:templateCapabilities.capacityProfileVersion,capacityProfile:templateCapabilities.capacityProfile,rolloutProfile}, pageBudget, themeSnapshot:themeSnapshotPath, images, pageCount:images.length };
+  return { workdir, copy:copyPath, publishTitle:publishTitlePath, html:htmlPath, layoutReport:reportPath, deliveryReport:deliveryPath, templateMetrics:templateMetricsPath, contentPlanAdjustments:contentPlanAdjustmentsPath, jointPackingAudit:jointPackingAuditPath, theme:{id:themeDefinition.id,version:themeDefinition.version,hash:themeDefinition.hash}, themeRouting, template:{pack:templateCompatibility.templatePack,source:templateCompatibility.source,fallback:templateCompatibility.fallback,warnings:templateCompatibility.warnings,capacityProfileVersion:templateCapabilities.capacityProfileVersion,capacityProfile:templateCapabilities.capacityProfile,rolloutProfile}, pageBudget, themeSnapshot:themeSnapshotPath, images, pageCount:images.length };
 }
